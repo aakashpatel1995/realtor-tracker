@@ -66,7 +66,9 @@ A Chrome extension that tracks real estate listings in the Greater Toronto Area 
 
 ### Step 4: Use the Dashboard
 
-1. Open `dashboard/index.html` in your browser
+**Live Dashboard**: https://aakashpatel1995.github.io/realtor-tracker/
+
+1. Visit the dashboard URL above (or open `docs/index.html` locally)
 2. Enter the same Airtable credentials
 3. View your statistics!
 
@@ -82,7 +84,7 @@ realtor-tracker/
 │   │   ├── popup.js           # Popup logic
 │   │   └── popup.css          # Popup styles
 │   └── icons/                 # Extension icons
-├── dashboard/
+├── docs/                        # Dashboard (GitHub Pages)
 │   ├── index.html             # Standalone dashboard page
 │   ├── dashboard.js           # Dashboard logic
 │   └── dashboard.css          # Dashboard styles
