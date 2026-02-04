@@ -1,4 +1,4 @@
-// Popup script for Realtor Tracker
+// Popup script for Realtor Tracker (Google Sheets version)
 
 document.addEventListener('DOMContentLoaded', async () => {
   const configSection = document.getElementById('config-section');
@@ -11,15 +11,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Load existing config
   chrome.runtime.sendMessage({ action: 'getConfig' }, (config) => {
-    if (config.airtableApiKey) {
-      document.getElementById('apiKey').value = config.airtableApiKey;
-    }
-    if (config.airtableBaseId) {
-      document.getElementById('baseId').value = config.airtableBaseId;
+    if (config.scriptUrl) {
+      document.getElementById('scriptUrl').value = config.scriptUrl;
     }
 
     // Show config section if not configured
-    if (!config.airtableApiKey || !config.airtableBaseId) {
+    if (!config.scriptUrl) {
       configSection.classList.remove('hidden');
     }
   });
@@ -34,18 +31,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Save config
   saveConfigBtn.addEventListener('click', () => {
-    const apiKey = document.getElementById('apiKey').value.trim();
-    const baseId = document.getElementById('baseId').value.trim();
+    const scriptUrl = document.getElementById('scriptUrl').value.trim();
 
-    if (!apiKey || !baseId) {
-      showError('Please enter both API key and Base ID');
+    if (!scriptUrl) {
+      showError('Please enter the Google Apps Script URL');
       return;
     }
 
     chrome.runtime.sendMessage({
       action: 'saveConfig',
-      apiKey: apiKey,
-      baseId: baseId
+      scriptUrl: scriptUrl
     }, (response) => {
       if (response.success) {
         configSection.classList.add('hidden');

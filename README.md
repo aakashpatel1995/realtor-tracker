@@ -1,6 +1,6 @@
 # Realtor.ca Listing Tracker
 
-A Chrome extension that tracks real estate listings in the Greater Toronto Area from realtor.ca, storing data in Airtable and displaying statistics on a dashboard.
+A Chrome extension that tracks real estate listings in the Greater Toronto Area from realtor.ca, storing data in Google Sheets and displaying statistics on a dashboard.
 
 ## Features
 
@@ -9,6 +9,7 @@ A Chrome extension that tracks real estate listings in the Greater Toronto Area 
 - **Sold/Delisted Detection**: Tracks when listings are removed from the market
 - **Statistics Dashboard**: Visual display of listing metrics
 - **Both Sale & Rent**: Tracks properties for sale and for rent
+- **Unlimited Storage**: Uses Google Sheets (no record limits)
 
 ## Metrics Tracked
 
@@ -21,40 +22,33 @@ A Chrome extension that tracks real estate listings in the Greater Toronto Area 
 
 ## Setup
 
-### Step 1: Create Airtable Base
+### Step 1: Create Google Spreadsheet
 
-1. Create a free account at [airtable.com](https://airtable.com)
-2. Create a new Base called "Realtor Tracker"
-3. Create two tables with the following fields:
+1. Go to [sheets.google.com](https://sheets.google.com) and create a new spreadsheet
+2. Rename "Sheet1" to "Listings"
+3. Create a second sheet called "Daily_Stats"
+4. In the "Listings" sheet, add these headers in row 1:
+   ```
+   MLS_Number | Price | Address | Type | First_Seen | Last_Seen | Status
+   ```
+5. In the "Daily_Stats" sheet, add these headers in row 1:
+   ```
+   Date | New_Listings | Sold_Count | Total_Active
+   ```
 
-**Table: Listings**
-| Field | Type |
-|-------|------|
-| MLS_Number | Single line text (Primary) |
-| Price | Number |
-| Address | Single line text |
-| Type | Single select (options: sale, rent) |
-| First_Seen | Date |
-| Last_Seen | Date |
-| Status | Single select (options: active, sold) |
+### Step 2: Set Up Google Apps Script
 
-**Table: Daily_Stats**
-| Field | Type |
-|-------|------|
-| Date | Date (Primary) |
-| New_Listings | Number |
-| Sold_Count | Number |
-| Total_Active | Number |
-
-### Step 2: Get Airtable Credentials
-
-1. Go to [airtable.com/account](https://airtable.com/account)
-2. Create a Personal Access Token with these scopes:
-   - `data.records:read`
-   - `data.records:write`
-3. Copy the token (starts with `pat...`)
-4. Go to [airtable.com/api](https://airtable.com/api) and select your base
-5. Copy the Base ID from the URL (starts with `app...`)
+1. In your spreadsheet, go to **Extensions > Apps Script**
+2. Delete any existing code
+3. Copy the entire contents of `google-apps-script.js` from this repo and paste it
+4. Click the **Save** button
+5. Click **Deploy > New deployment**
+6. Select type: **Web app**
+7. Set "Execute as" to **Me**
+8. Set "Who has access" to **Anyone**
+9. Click **Deploy**
+10. Authorize when prompted (click through security warnings)
+11. **Copy the Web app URL** - you'll need this!
 
 ### Step 3: Install the Extension
 
@@ -62,15 +56,18 @@ A Chrome extension that tracks real estate listings in the Greater Toronto Area 
 2. Enable "Developer mode" (toggle in top right)
 3. Click "Load unpacked"
 4. Select the `extension` folder from this project
-5. Click the extension icon and enter your Airtable credentials
+5. Click the extension icon
+6. Paste your Google Apps Script URL
+7. Click "Save Configuration"
 
 ### Step 4: Use the Dashboard
 
 **Live Dashboard**: https://aakashpatel1995.github.io/realtor-tracker/
 
-1. Visit the dashboard URL above (or open `docs/index.html` locally)
-2. Enter the same Airtable credentials
-3. View your statistics!
+1. Visit the dashboard URL above
+2. Click "Configure Now"
+3. Paste the same Google Apps Script URL
+4. Click "Save & Load Data"
 
 ## Project Structure
 
@@ -84,20 +81,21 @@ realtor-tracker/
 │   │   ├── popup.js           # Popup logic
 │   │   └── popup.css          # Popup styles
 │   └── icons/                 # Extension icons
-├── docs/                        # Dashboard (GitHub Pages)
+├── docs/                      # Dashboard (GitHub Pages)
 │   ├── index.html             # Standalone dashboard page
 │   ├── dashboard.js           # Dashboard logic
 │   └── dashboard.css          # Dashboard styles
+├── google-apps-script.js      # Apps Script code for Google Sheets
 └── README.md
 ```
 
 ## How It Works
 
 1. **Data Collection**: The background service worker fetches listings from realtor.ca's public API endpoint every hour
-2. **Comparison**: New listings are compared against existing records in Airtable
+2. **Sync**: Data is sent to Google Sheets via Apps Script web app
 3. **Detection**: New listings are added, missing listings are marked as sold
 4. **Statistics**: Daily stats are recorded for historical tracking
-5. **Display**: The popup and dashboard read from Airtable to display metrics
+5. **Display**: The popup and dashboard read from Google Sheets to display metrics
 
 ## GTA Coverage
 
@@ -107,32 +105,31 @@ The extension tracks listings within these geographic bounds:
 
 This covers most of the Greater Toronto Area including Toronto, Mississauga, Brampton, Markham, Vaughan, Richmond Hill, and surrounding areas.
 
-## Limitations
-
-- **Airtable Free Tier**: Limited to 1,000 records per base
-- **API Rate Limits**: realtor.ca may rate-limit aggressive requests
-- **Airtable API**: 5 requests/second limit
-
 ## Tips
 
 - The extension runs automatically every hour, but you can trigger a manual refresh anytime
 - The dashboard can be bookmarked for quick access
-- For hosting the dashboard online, you can use GitHub Pages (free)
-- Historical data is preserved in Airtable for trend analysis
+- Historical data is preserved in Google Sheets for trend analysis
+- You can view/edit data directly in Google Sheets
 
 ## Troubleshooting
 
 **Extension not loading data:**
-- Check that your Airtable credentials are correct
-- Verify the table names match exactly ("Listings" and "Daily_Stats")
+- Check that your Apps Script URL is correct (should end with `/exec`)
+- Verify the Apps Script is deployed as a web app
 - Check the browser console for error messages
+
+**"Authorization required" error:**
+- Re-deploy your Apps Script and authorize again
+- Make sure "Who has access" is set to "Anyone"
 
 **No listings appearing:**
 - The first fetch may take a few minutes due to pagination
 - Ensure you've run a manual refresh at least once
+- Check that sheet names are exactly "Listings" and "Daily_Stats"
 
 **Dashboard not updating:**
-- Verify the credentials are saved (check localStorage)
+- Verify the URL is saved (check browser console)
 - Try a manual refresh
 - Check browser console for errors
 

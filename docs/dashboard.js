@@ -1,10 +1,7 @@
-// Dashboard for Realtor Tracker
+// Dashboard for Realtor Tracker (Google Sheets version)
 
 const CONFIG = {
-  AIRTABLE_API_KEY: '',
-  AIRTABLE_BASE_ID: '',
-  LISTINGS_TABLE: 'Listings',
-  STATS_TABLE: 'Daily_Stats',
+  SCRIPT_URL: '',
   AUTO_REFRESH_INTERVAL: 5 * 60 * 1000 // 5 minutes
 };
 
@@ -17,13 +14,11 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function loadConfigFromStorage() {
-  CONFIG.AIRTABLE_API_KEY = localStorage.getItem('airtable_api_key') || '';
-  CONFIG.AIRTABLE_BASE_ID = localStorage.getItem('airtable_base_id') || '';
+  CONFIG.SCRIPT_URL = localStorage.getItem('sheets_script_url') || '';
 
-  if (CONFIG.AIRTABLE_API_KEY && CONFIG.AIRTABLE_BASE_ID) {
+  if (CONFIG.SCRIPT_URL) {
     document.getElementById('config-banner').classList.add('hidden');
-    document.getElementById('apiKey').value = CONFIG.AIRTABLE_API_KEY;
-    document.getElementById('baseId').value = CONFIG.AIRTABLE_BASE_ID;
+    document.getElementById('scriptUrl').value = CONFIG.SCRIPT_URL;
     loadAllData();
     startAutoRefresh();
   }
@@ -65,19 +60,15 @@ function hideConfigModal() {
 }
 
 function saveConfig() {
-  const apiKey = document.getElementById('apiKey').value.trim();
-  const baseId = document.getElementById('baseId').value.trim();
+  const scriptUrl = document.getElementById('scriptUrl').value.trim();
 
-  if (!apiKey || !baseId) {
-    showToast('Please enter both API key and Base ID', 'error');
+  if (!scriptUrl) {
+    showToast('Please enter the Google Apps Script URL', 'error');
     return;
   }
 
-  CONFIG.AIRTABLE_API_KEY = apiKey;
-  CONFIG.AIRTABLE_BASE_ID = baseId;
-
-  localStorage.setItem('airtable_api_key', apiKey);
-  localStorage.setItem('airtable_base_id', baseId);
+  CONFIG.SCRIPT_URL = scriptUrl;
+  localStorage.setItem('sheets_script_url', scriptUrl);
 
   hideConfigModal();
   document.getElementById('config-banner').classList.add('hidden');
@@ -88,64 +79,33 @@ function saveConfig() {
   showToast('Configuration saved!', 'success');
 }
 
-async function airtableFetch(endpoint) {
-  if (!CONFIG.AIRTABLE_API_KEY || !CONFIG.AIRTABLE_BASE_ID) {
-    throw new Error('Airtable not configured');
+async function sheetsApi(action) {
+  if (!CONFIG.SCRIPT_URL) {
+    throw new Error('Google Sheets not configured');
   }
 
-  const url = `https://api.airtable.com/v0/${CONFIG.AIRTABLE_BASE_ID}/${endpoint}`;
-  const response = await fetch(url, {
-    headers: {
-      'Authorization': `Bearer ${CONFIG.AIRTABLE_API_KEY}`
-    }
-  });
+  const url = `${CONFIG.SCRIPT_URL}?action=${action}`;
+  const response = await fetch(url);
 
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Airtable error: ${error}`);
+    throw new Error(`API error: ${response.status}`);
   }
 
   return response.json();
-}
-
-async function getAllListings() {
-  const listings = [];
-  let offset = null;
-
-  do {
-    const params = new URLSearchParams();
-    if (offset) params.set('offset', offset);
-
-    const data = await airtableFetch(`${CONFIG.LISTINGS_TABLE}?${params.toString()}`);
-    listings.push(...data.records.map(r => r.fields));
-    offset = data.offset;
-  } while (offset);
-
-  return listings;
-}
-
-async function getDailyStats() {
-  const params = new URLSearchParams({
-    sort: JSON.stringify([{ field: 'Date', direction: 'desc' }]),
-    maxRecords: '30'
-  });
-
-  const data = await airtableFetch(`${CONFIG.STATS_TABLE}?${params.toString()}`);
-  return data.records.map(r => r.fields);
 }
 
 async function loadAllData() {
   try {
     setLoading(true);
 
-    const [listings, dailyStats] = await Promise.all([
-      getAllListings(),
-      getDailyStats()
+    const [stats, dailyStats] = await Promise.all([
+      sheetsApi('getStats'),
+      sheetsApi('getDailyStats')
     ]);
 
-    updateStats(listings);
-    updateBreakdown(listings);
-    updateHistory(dailyStats);
+    updateStats(stats);
+    updateBreakdown(stats);
+    updateHistory(dailyStats.stats || []);
     updateLastUpdated();
 
   } catch (error) {
@@ -156,54 +116,17 @@ async function loadAllData() {
   }
 }
 
-function updateStats(listings) {
-  const now = new Date();
-  const today = now.toISOString().split('T')[0];
-  const sevenDaysAgo = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-  const sevenWeeksAgo = new Date(now - 49 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-
-  let newToday = 0;
-  let newLast7Days = 0;
-  let newLast7Weeks = 0;
-  let soldToday = 0;
-  let totalActive = 0;
-
-  listings.forEach(listing => {
-    const firstSeen = listing.First_Seen;
-    const lastSeen = listing.Last_Seen;
-
-    if (listing.Status === 'active') {
-      totalActive++;
-    }
-
-    if (firstSeen === today) {
-      newToday++;
-    }
-
-    if (firstSeen >= sevenDaysAgo) {
-      newLast7Days++;
-    }
-
-    if (firstSeen >= sevenWeeksAgo) {
-      newLast7Weeks++;
-    }
-
-    if (listing.Status === 'sold' && lastSeen === today) {
-      soldToday++;
-    }
-  });
-
-  animateNumber('newToday', newToday);
-  animateNumber('newLast7Days', newLast7Days);
-  animateNumber('newLast7Weeks', newLast7Weeks);
-  animateNumber('soldToday', soldToday);
-  animateNumber('totalActive', totalActive);
+function updateStats(stats) {
+  animateNumber('newToday', stats.newToday || 0);
+  animateNumber('newLast7Days', stats.newLast7Days || 0);
+  animateNumber('newLast7Weeks', stats.newLast7Weeks || 0);
+  animateNumber('soldToday', stats.soldToday || 0);
+  animateNumber('totalActive', stats.totalActive || 0);
 }
 
-function updateBreakdown(listings) {
-  const activeListings = listings.filter(l => l.Status === 'active');
-  const saleCount = activeListings.filter(l => l.Type === 'sale').length;
-  const rentCount = activeListings.filter(l => l.Type === 'rent').length;
+function updateBreakdown(stats) {
+  const saleCount = stats.saleCount || 0;
+  const rentCount = stats.rentCount || 0;
   const total = saleCount + rentCount;
 
   document.getElementById('saleCount').textContent = saleCount.toLocaleString();
@@ -218,8 +141,8 @@ function updateBreakdown(listings) {
 function updateHistory(dailyStats) {
   const container = document.getElementById('historyTable');
 
-  if (dailyStats.length === 0) {
-    container.innerHTML = '<div class="history-loading">No history data available</div>';
+  if (!dailyStats || dailyStats.length === 0) {
+    container.innerHTML = '<div class="history-loading">No history data available yet</div>';
     return;
   }
 
@@ -304,7 +227,7 @@ function startAutoRefresh() {
   }
 
   autoRefreshTimer = setInterval(() => {
-    if (CONFIG.AIRTABLE_API_KEY && CONFIG.AIRTABLE_BASE_ID) {
+    if (CONFIG.SCRIPT_URL) {
       loadAllData();
     }
   }, CONFIG.AUTO_REFRESH_INTERVAL);

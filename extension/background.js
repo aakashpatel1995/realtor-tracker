@@ -1,11 +1,8 @@
-// Realtor.ca Listing Tracker - Background Service Worker
+// Realtor.ca Listing Tracker - Background Service Worker (Google Sheets version)
 
-// Configuration - User needs to set these
+// Configuration
 const CONFIG = {
-  AIRTABLE_API_KEY: '', // Set via extension storage
-  AIRTABLE_BASE_ID: '', // Set via extension storage
-  LISTINGS_TABLE: 'Listings',
-  STATS_TABLE: 'Daily_Stats',
+  SCRIPT_URL: '', // Google Apps Script Web App URL
   UPDATE_INTERVAL_MINUTES: 60
 };
 
@@ -37,7 +34,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     fetchAndUpdateListings().then(result => {
       sendResponse(result);
     });
-    return true; // Keep channel open for async response
+    return true;
   }
   if (request.action === 'getStats') {
     getStats().then(stats => {
@@ -47,15 +44,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   if (request.action === 'saveConfig') {
     chrome.storage.local.set({
-      airtableApiKey: request.apiKey,
-      airtableBaseId: request.baseId
+      scriptUrl: request.scriptUrl
     }, () => {
       sendResponse({ success: true });
     });
     return true;
   }
   if (request.action === 'getConfig') {
-    chrome.storage.local.get(['airtableApiKey', 'airtableBaseId'], (result) => {
+    chrome.storage.local.get(['scriptUrl'], (result) => {
       sendResponse(result);
     });
     return true;
@@ -65,9 +61,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // Load config from storage
 async function loadConfig() {
   return new Promise((resolve) => {
-    chrome.storage.local.get(['airtableApiKey', 'airtableBaseId'], (result) => {
-      CONFIG.AIRTABLE_API_KEY = result.airtableApiKey || '';
-      CONFIG.AIRTABLE_BASE_ID = result.airtableBaseId || '';
+    chrome.storage.local.get(['scriptUrl'], (result) => {
+      CONFIG.SCRIPT_URL = result.scriptUrl || '';
       resolve();
     });
   });
@@ -121,7 +116,7 @@ async function fetchAllListings() {
   // Fetch sale listings (paginate through all)
   let page = 1;
   let hasMore = true;
-  while (hasMore && page <= 10) { // Limit to 10 pages (2000 listings) to avoid rate limiting
+  while (hasMore && page <= 10) {
     const saleListings = await fetchRealtorListings('sale', page);
     if (saleListings.length === 0) {
       hasMore = false;
@@ -135,7 +130,7 @@ async function fetchAllListings() {
         });
       });
       page++;
-      await delay(200); // Rate limiting
+      await delay(200);
     }
   }
 
@@ -156,192 +151,40 @@ async function fetchAllListings() {
         });
       });
       page++;
-      await delay(200); // Rate limiting
+      await delay(200);
     }
   }
 
   return allListings;
 }
 
-// Airtable API helpers
-async function airtableFetch(endpoint, options = {}) {
+// Google Sheets API helper
+async function sheetsApi(action, data = null) {
   await loadConfig();
 
-  if (!CONFIG.AIRTABLE_API_KEY || !CONFIG.AIRTABLE_BASE_ID) {
-    throw new Error('Airtable not configured');
+  if (!CONFIG.SCRIPT_URL) {
+    throw new Error('Google Sheets not configured');
   }
 
-  const url = `https://api.airtable.com/v0/${CONFIG.AIRTABLE_BASE_ID}/${endpoint}`;
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      'Authorization': `Bearer ${CONFIG.AIRTABLE_API_KEY}`,
-      'Content-Type': 'application/json',
-      ...options.headers
-    }
-  });
+  const url = data
+    ? CONFIG.SCRIPT_URL
+    : `${CONFIG.SCRIPT_URL}?action=${action}`;
+
+  const options = data
+    ? {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, ...data })
+      }
+    : { method: 'GET' };
+
+  const response = await fetch(url, options);
 
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Airtable error: ${error}`);
+    throw new Error(`Sheets API error: ${response.status}`);
   }
 
   return response.json();
-}
-
-// Get existing listings from Airtable
-async function getExistingListings() {
-  const listings = new Map();
-  let offset = null;
-
-  do {
-    const params = new URLSearchParams();
-    if (offset) params.set('offset', offset);
-
-    const data = await airtableFetch(`${CONFIG.LISTINGS_TABLE}?${params.toString()}`);
-
-    data.records.forEach(record => {
-      listings.set(record.fields.MLS_Number, {
-        id: record.id,
-        ...record.fields
-      });
-    });
-
-    offset = data.offset;
-    await delay(200); // Rate limiting for Airtable
-  } while (offset);
-
-  return listings;
-}
-
-// Create new listing in Airtable
-async function createListing(listing) {
-  const today = new Date().toISOString().split('T')[0];
-
-  return airtableFetch(CONFIG.LISTINGS_TABLE, {
-    method: 'POST',
-    body: JSON.stringify({
-      records: [{
-        fields: {
-          MLS_Number: listing.mlsNumber,
-          Price: listing.price,
-          Address: listing.address,
-          Type: listing.type,
-          First_Seen: today,
-          Last_Seen: today,
-          Status: 'active'
-        }
-      }]
-    })
-  });
-}
-
-// Update listing in Airtable
-async function updateListing(recordId, fields) {
-  return airtableFetch(CONFIG.LISTINGS_TABLE, {
-    method: 'PATCH',
-    body: JSON.stringify({
-      records: [{
-        id: recordId,
-        fields: fields
-      }]
-    })
-  });
-}
-
-// Batch create listings (up to 10 at a time)
-async function batchCreateListings(listings) {
-  const batches = [];
-  for (let i = 0; i < listings.length; i += 10) {
-    batches.push(listings.slice(i, i + 10));
-  }
-
-  const today = new Date().toISOString().split('T')[0];
-
-  for (const batch of batches) {
-    await airtableFetch(CONFIG.LISTINGS_TABLE, {
-      method: 'POST',
-      body: JSON.stringify({
-        records: batch.map(listing => ({
-          fields: {
-            MLS_Number: listing.mlsNumber,
-            Price: listing.price,
-            Address: listing.address,
-            Type: listing.type,
-            First_Seen: today,
-            Last_Seen: today,
-            Status: 'active'
-          }
-        }))
-      })
-    });
-    await delay(200); // Rate limiting
-  }
-}
-
-// Batch update listings (up to 10 at a time)
-async function batchUpdateListings(updates) {
-  const batches = [];
-  for (let i = 0; i < updates.length; i += 10) {
-    batches.push(updates.slice(i, i + 10));
-  }
-
-  for (const batch of batches) {
-    await airtableFetch(CONFIG.LISTINGS_TABLE, {
-      method: 'PATCH',
-      body: JSON.stringify({
-        records: batch.map(update => ({
-          id: update.id,
-          fields: update.fields
-        }))
-      })
-    });
-    await delay(200); // Rate limiting
-  }
-}
-
-// Update daily stats
-async function updateDailyStats(newCount, soldCount, totalActive) {
-  const today = new Date().toISOString().split('T')[0];
-
-  // Check if today's record exists
-  const params = new URLSearchParams({
-    filterByFormula: `{Date}='${today}'`
-  });
-
-  const existing = await airtableFetch(`${CONFIG.STATS_TABLE}?${params.toString()}`);
-
-  if (existing.records.length > 0) {
-    // Update existing record
-    await airtableFetch(CONFIG.STATS_TABLE, {
-      method: 'PATCH',
-      body: JSON.stringify({
-        records: [{
-          id: existing.records[0].id,
-          fields: {
-            New_Listings: newCount,
-            Sold_Count: soldCount,
-            Total_Active: totalActive
-          }
-        }]
-      })
-    });
-  } else {
-    // Create new record
-    await airtableFetch(CONFIG.STATS_TABLE, {
-      method: 'POST',
-      body: JSON.stringify({
-        records: [{
-          fields: {
-            Date: today,
-            New_Listings: newCount,
-            Sold_Count: soldCount,
-            Total_Active: totalActive
-          }
-        }]
-      })
-    });
-  }
 }
 
 // Main function to fetch and update listings
@@ -349,86 +192,22 @@ async function fetchAndUpdateListings() {
   try {
     await loadConfig();
 
-    if (!CONFIG.AIRTABLE_API_KEY || !CONFIG.AIRTABLE_BASE_ID) {
-      return { success: false, error: 'Airtable not configured' };
+    if (!CONFIG.SCRIPT_URL) {
+      return { success: false, error: 'Google Sheets not configured' };
     }
 
     console.log('Fetching listings from realtor.ca...');
     const currentListings = await fetchAllListings();
     console.log(`Found ${currentListings.length} listings on realtor.ca`);
 
-    console.log('Fetching existing listings from Airtable...');
-    const existingListings = await getExistingListings();
-    console.log(`Found ${existingListings.size} listings in Airtable`);
-
-    const today = new Date().toISOString().split('T')[0];
-    const currentMlsNumbers = new Set(currentListings.map(l => l.mlsNumber));
-
-    // Find new listings
-    const newListings = currentListings.filter(l => !existingListings.has(l.mlsNumber));
-    console.log(`Found ${newListings.length} new listings`);
-
-    // Find listings to update (still active)
-    const toUpdate = [];
-    currentListings.forEach(listing => {
-      if (existingListings.has(listing.mlsNumber)) {
-        const existing = existingListings.get(listing.mlsNumber);
-        if (existing.Status === 'active') {
-          toUpdate.push({
-            id: existing.id,
-            fields: { Last_Seen: today }
-          });
-        } else {
-          // Relisted
-          toUpdate.push({
-            id: existing.id,
-            fields: { Last_Seen: today, Status: 'active' }
-          });
-        }
-      }
-    });
-
-    // Find sold/delisted listings
-    const soldListings = [];
-    existingListings.forEach((listing, mlsNumber) => {
-      if (listing.Status === 'active' && !currentMlsNumbers.has(mlsNumber)) {
-        soldListings.push({
-          id: listing.id,
-          fields: { Status: 'sold' }
-        });
-      }
-    });
-    console.log(`Found ${soldListings.length} sold/delisted listings`);
-
-    // Apply updates to Airtable
-    if (newListings.length > 0) {
-      console.log('Creating new listings in Airtable...');
-      await batchCreateListings(newListings);
-    }
-
-    if (toUpdate.length > 0) {
-      console.log('Updating existing listings in Airtable...');
-      await batchUpdateListings(toUpdate);
-    }
-
-    if (soldListings.length > 0) {
-      console.log('Marking sold listings in Airtable...');
-      await batchUpdateListings(soldListings);
-    }
-
-    // Update daily stats
-    const totalActive = currentListings.length;
-    await updateDailyStats(newListings.length, soldListings.length, totalActive);
+    console.log('Syncing with Google Sheets...');
+    const result = await sheetsApi('syncListings', { listings: currentListings });
 
     // Store last update time
     chrome.storage.local.set({ lastUpdate: new Date().toISOString() });
 
-    return {
-      success: true,
-      newListings: newListings.length,
-      soldListings: soldListings.length,
-      totalActive: totalActive
-    };
+    console.log('Sync complete:', result);
+    return result;
   } catch (error) {
     console.error('Error updating listings:', error);
     return { success: false, error: error.message };
@@ -440,60 +219,17 @@ async function getStats() {
   try {
     await loadConfig();
 
-    if (!CONFIG.AIRTABLE_API_KEY || !CONFIG.AIRTABLE_BASE_ID) {
-      return { error: 'Airtable not configured' };
+    if (!CONFIG.SCRIPT_URL) {
+      return { error: 'Google Sheets not configured' };
     }
 
-    const existingListings = await getExistingListings();
+    const data = await sheetsApi('getStats');
 
-    const now = new Date();
-    const today = now.toISOString().split('T')[0];
-    const sevenDaysAgo = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const sevenWeeksAgo = new Date(now - 49 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-
-    let newToday = 0;
-    let newLast7Days = 0;
-    let newLast7Weeks = 0;
-    let soldToday = 0;
-    let totalActive = 0;
-
-    existingListings.forEach(listing => {
-      const firstSeen = listing.First_Seen;
-      const lastSeen = listing.Last_Seen;
-
-      if (listing.Status === 'active') {
-        totalActive++;
-      }
-
-      if (firstSeen === today) {
-        newToday++;
-      }
-
-      if (firstSeen >= sevenDaysAgo) {
-        newLast7Days++;
-      }
-
-      if (firstSeen >= sevenWeeksAgo) {
-        newLast7Weeks++;
-      }
-
-      // Sold today: status is sold and last_seen is today or yesterday
-      if (listing.Status === 'sold' && lastSeen === today) {
-        soldToday++;
-      }
-    });
-
-    // Get last update time
+    // Get last update time from storage
     const storage = await chrome.storage.local.get(['lastUpdate']);
+    data.lastUpdate = storage.lastUpdate || null;
 
-    return {
-      newToday,
-      newLast7Days,
-      newLast7Weeks,
-      soldToday,
-      totalActive,
-      lastUpdate: storage.lastUpdate || null
-    };
+    return data;
   } catch (error) {
     console.error('Error getting stats:', error);
     return { error: error.message };

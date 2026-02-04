@@ -9,27 +9,22 @@
 <body>
   <div class="container">
     <header>
-      <h1>🏠 Realtor Tracker Dashboard</h1>
+      <h1>Realtor Tracker Dashboard</h1>
       <p class="subtitle">Greater Toronto Area Real Estate Listings</p>
     </header>
 
     <div id="config-banner" class="config-banner">
-      <p>Configure your Airtable connection to view statistics</p>
+      <p>Configure your Google Sheets connection to view statistics</p>
       <button id="showConfigBtn" class="btn btn-white">Configure Now</button>
     </div>
 
     <div id="config-modal" class="modal hidden">
       <div class="modal-content">
-        <h2>Airtable Configuration</h2>
+        <h2>Google Sheets Configuration</h2>
         <div class="input-group">
-          <label for="apiKey">Airtable API Key:</label>
-          <input type="password" id="apiKey" placeholder="Enter your Airtable API key">
-          <small>Get your API key from <a href="https://airtable.com/account" target="_blank">airtable.com/account</a></small>
-        </div>
-        <div class="input-group">
-          <label for="baseId">Airtable Base ID:</label>
-          <input type="text" id="baseId" placeholder="Enter your Base ID (starts with 'app')">
-          <small>Find your Base ID in the <a href="https://airtable.com/api" target="_blank">Airtable API docs</a></small>
+          <label for="scriptUrl">Google Apps Script URL:</label>
+          <input type="text" id="scriptUrl" placeholder="https://script.google.com/macros/s/.../exec">
+          <small>Deploy your Apps Script as a web app and paste the URL here</small>
         </div>
         <div class="modal-actions">
           <button id="saveConfigBtn" class="btn btn-primary">Save & Load Data</button>
@@ -43,25 +38,25 @@
         <h2>Listing Statistics</h2>
         <div class="stats-grid">
           <div class="stat-card new-today">
-            <div class="stat-icon">📈</div>
+            <div class="stat-icon">+</div>
             <div class="stat-value" id="newToday">-</div>
             <div class="stat-label">New Today</div>
             <div class="stat-description">Listings added today</div>
           </div>
           <div class="stat-card new-week">
-            <div class="stat-icon">📊</div>
+            <div class="stat-icon">7d</div>
             <div class="stat-value" id="newLast7Days">-</div>
             <div class="stat-label">Last 7 Days</div>
             <div class="stat-description">New listings this week</div>
           </div>
           <div class="stat-card new-weeks">
-            <div class="stat-icon">📅</div>
+            <div class="stat-icon">7w</div>
             <div class="stat-value" id="newLast7Weeks">-</div>
             <div class="stat-label">Last 7 Weeks</div>
             <div class="stat-description">New listings (49 days)</div>
           </div>
           <div class="stat-card sold">
-            <div class="stat-icon">🏷️</div>
+            <div class="stat-icon">-</div>
             <div class="stat-value" id="soldToday">-</div>
             <div class="stat-label">Sold/Delisted Today</div>
             <div class="stat-description">Removed from market</div>
@@ -69,7 +64,7 @@
         </div>
 
         <div class="total-card">
-          <div class="total-icon">🏘️</div>
+          <div class="total-icon">ALL</div>
           <div class="total-content">
             <div class="total-value" id="totalActive">-</div>
             <div class="total-label">Total Active Listings</div>
@@ -120,7 +115,7 @@
           <span id="refreshText">Refresh Now</span>
           <span id="refreshSpinner" class="spinner hidden"></span>
         </button>
-        <button id="settingsBtn" class="btn btn-secondary">⚙️ Settings</button>
+        <button id="settingsBtn" class="btn btn-secondary">Settings</button>
       </div>
     </footer>
   </div>
