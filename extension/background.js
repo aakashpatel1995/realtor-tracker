@@ -2,7 +2,7 @@
 
 const CONFIG = {
   SCRIPT_URL: '',
-  CITY_FETCH_INTERVAL_MINUTES: 30  // Fetch one city every 30 minutes
+  CITY_FETCH_INTERVAL_MINUTES: 15  // Fetch one city every 15 minutes
 };
 
 // Complete list of Ontario cities (must match content.js)
@@ -59,6 +59,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'fetchNextCity') {
     fetchNextCity().then(sendResponse);
     return true;
+  }
+  if (request.action === 'fetchSpecificCity') {
+    fetchSpecificCity(request.city).then(sendResponse);
+    return true;
+  }
+  if (request.action === 'getCities') {
+    sendResponse({ cities: ONTARIO_CITIES });
+    return false;
   }
   if (request.action === 'fetchAllCities') {
     fetchAllCitiesSequentially().then(sendResponse);
@@ -177,6 +185,52 @@ async function fetchNextCity() {
 
   } catch (error) {
     console.error('[RealtorTracker] fetchNextCity error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Fetch a specific city (selected from dropdown)
+async function fetchSpecificCity(city) {
+  try {
+    await loadConfig();
+    if (!CONFIG.SCRIPT_URL) {
+      return { success: false, error: 'Google Sheets not configured' };
+    }
+
+    if (!city || !ONTARIO_CITIES.includes(city)) {
+      return { success: false, error: 'Invalid city selected' };
+    }
+
+    console.log(`[RealtorTracker] ===== Fetching selected city: ${city} =====`);
+
+    // Fetch listings for this city
+    const listings = await fetchCityViaContentScript(city);
+
+    if (listings.length > 0) {
+      console.log(`[RealtorTracker] ${city}: Got ${listings.length} listings, syncing...`);
+      await syncToSheets(listings);
+    } else {
+      console.log(`[RealtorTracker] ${city}: No listings found`);
+    }
+
+    // Update last fetched (but don't change the index)
+    await chrome.storage.local.set({
+      lastCityFetched: city,
+      lastCityFetchTime: new Date().toISOString(),
+      lastUpdate: new Date().toISOString()
+    });
+
+    // Refresh stats
+    await getStats(true);
+
+    return {
+      success: true,
+      city: city,
+      listingsFound: listings.length
+    };
+
+  } catch (error) {
+    console.error('[RealtorTracker] fetchSpecificCity error:', error);
     return { success: false, error: error.message };
   }
 }

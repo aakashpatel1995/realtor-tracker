@@ -41,6 +41,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Load schedule status
   loadScheduleStatus();
 
+  // Load city dropdown
+  loadCityDropdown();
+
   // Toggle config section
   configBtn.addEventListener('click', () => {
     configSection.classList.toggle('hidden');
@@ -67,16 +70,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // Fetch next city
+  // Fetch city (next or selected)
   fetchCityBtn.addEventListener('click', async () => {
+    const citySelect = document.getElementById('citySelect');
+    const selectedCity = citySelect.value;
+
     fetchCityBtn.disabled = true;
     fetchCityText.textContent = 'Fetching...';
     fetchCitySpinner.classList.remove('hidden');
     hideError();
 
-    chrome.runtime.sendMessage({ action: 'fetchNextCity' }, (result) => {
+    // Determine which action to use
+    const action = selectedCity ? 'fetchSpecificCity' : 'fetchNextCity';
+    const message = selectedCity ? { action, city: selectedCity } : { action };
+
+    chrome.runtime.sendMessage(message, (result) => {
       fetchCityBtn.disabled = false;
-      fetchCityText.textContent = 'Fetch Next City';
+      fetchCityText.textContent = 'Fetch City';
       fetchCitySpinner.classList.add('hidden');
 
       if (result.success) {
@@ -85,7 +95,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Show which city was fetched
         fetchCityText.textContent = `Done: ${result.city}`;
         setTimeout(() => {
-          fetchCityText.textContent = 'Fetch Next City';
+          fetchCityText.textContent = 'Fetch City';
         }, 3000);
       } else {
         showError(result.error || 'Failed to fetch city');
@@ -256,6 +266,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     chrome.runtime.sendMessage({ action: 'getScheduleStatus' }, (status) => {
       if (status) {
         updateScheduleDisplay(status);
+      }
+    });
+  }
+
+  function loadCityDropdown() {
+    chrome.runtime.sendMessage({ action: 'getCities' }, (response) => {
+      if (response && response.cities) {
+        const citySelect = document.getElementById('citySelect');
+        citySelect.innerHTML = '<option value="">-- Next in queue --</option>';
+
+        response.cities.forEach(city => {
+          const option = document.createElement('option');
+          option.value = city;
+          option.textContent = city;
+          citySelect.appendChild(option);
+        });
       }
     });
   }

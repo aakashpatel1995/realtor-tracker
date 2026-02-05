@@ -60,7 +60,7 @@
           <div><strong>Progress:</strong> <span id="cityProgress">0/0</span></div>
           <div><strong>Current:</strong> <span id="currentCity">-</span></div>
           <div><strong>Last fetched:</strong> <span id="lastCityFetched">None</span></div>
-          <div><strong>Next fetch:</strong> Every 30 min (auto)</div>
+          <div><strong>Next fetch:</strong> Every 15 min (auto)</div>
         </div>
       </div>
 
@@ -81,9 +81,16 @@
 
       <div id="error-message" class="error hidden"></div>
 
+      <div class="city-select-group">
+        <label for="citySelect">Select City:</label>
+        <select id="citySelect" class="city-select">
+          <option value="">-- Next in queue --</option>
+        </select>
+      </div>
+
       <div class="actions">
         <button id="fetchCityBtn" class="btn btn-primary">
-          <span id="fetchCityText">Fetch Next City</span>
+          <span id="fetchCityText">Fetch City</span>
           <span id="fetchCitySpinner" class="spinner hidden"></span>
         </button>
         <button id="captureBtn" class="btn btn-secondary">
