@@ -2,11 +2,179 @@
 
 const CONFIG = {
   SCRIPT_URL: '',
-  CITY_FETCH_INTERVAL_MINUTES: 15  // Fetch one city every 15 minutes
+  CITY_FETCH_INTERVAL_MINUTES: 15,  // Fetch one city every 15 minutes
+  RECORDS_PER_PAGE: 200,
+  MAX_PAGES_PER_CITY: 25,
+  DELAY_BETWEEN_PAGES: 2000
 };
 
 // Current fetch progress (persists while popup is closed)
 let currentFetchProgress = null;
+
+// Fetch listings directly from API (background script can bypass CORS)
+async function fetchRealtorAPI(transactionType = 'sale', page = 1, cityName = null) {
+  const transactionTypeId = transactionType === 'sale' ? 2 : 3;
+  const params = new URLSearchParams({
+    CultureId: '1',
+    ApplicationId: '1',
+    Version: '7.0',
+    RecordsPerPage: CONFIG.RECORDS_PER_PAGE.toString(),
+    PropertySearchTypeId: '0',
+    PropertyTypeGroupID: '1',
+    TransactionTypeId: transactionTypeId.toString(),
+    CurrentPage: page.toString(),
+    Sort: '6-D',
+    Currency: 'CAD',
+    IncludeHiddenListings: 'false'
+  });
+
+  if (cityName) {
+    params.append('LocationSearchString', cityName);
+  }
+
+  const response = await fetch('https://api2.realtor.ca/Listing.svc/PropertySearch_Post', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+      'Accept': '*/*'
+    },
+    body: params.toString()
+  });
+
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const data = await response.json();
+  return {
+    results: data.Results || [],
+    totalRecords: data.Paging?.TotalRecords || 0,
+    totalPages: data.Paging?.TotalPages || 0
+  };
+}
+
+// Fetch all listings for a city directly from background
+async function fetchCityDirect(city) {
+  const listings = [];
+  const seenMls = new Set();
+
+  console.log(`[RealtorTracker] ========== Fetching: ${city} ==========`);
+  updateFetchProgress({ city, count: 0, page: 0, type: 'starting' });
+
+  for (let type of ['sale', 'rent']) {
+    console.log(`[RealtorTracker] ${city} - ${type.toUpperCase()}...`);
+    let page = 1;
+    let hasMore = true;
+    let retryCount = 0;
+
+    while (hasMore && page <= CONFIG.MAX_PAGES_PER_CITY) {
+      try {
+        const { results, totalRecords, totalPages } = await fetchRealtorAPI(type, page, city);
+
+        if (page === 1) {
+          console.log(`[RealtorTracker] ${city} ${type}: ${totalRecords} total, ${totalPages} pages`);
+        }
+
+        if (results.length === 0) {
+          hasMore = false;
+        } else {
+          retryCount = 0;
+          let newInPage = 0;
+
+          results.forEach(listing => {
+            if (seenMls.has(listing.MlsNumber)) return;
+            seenMls.add(listing.MlsNumber);
+
+            const building = listing.Building || {};
+            const property = listing.Property || {};
+            const land = listing.Land || {};
+            const fullAddress = property.Address?.AddressText || '';
+            const parsed = parseAddressBg(fullAddress);
+
+            listings.push({
+              mlsNumber: listing.MlsNumber,
+              price: property.Price ? parseInt(property.Price.replace(/[^0-9]/g, '')) : 0,
+              address: fullAddress,
+              streetAddress: parsed.street,
+              city: parsed.city,
+              province: parsed.province,
+              postalCode: listing.PostalCode || parsed.postalCode,
+              type: type,
+              bedrooms: building.Bedrooms || '',
+              bathrooms: building.BathroomTotal || '',
+              parking: property.ParkingSpaceTotal || '',
+              sqft: building.SizeInterior || '',
+              lotSize: land.SizeTotal || '',
+              propertyType: property.Type || '',
+              url: `https://www.realtor.ca${listing.RelativeDetailsURL || ''}`,
+              postedDate: parseRealtorDateBg(listing.InsertedDateUTC)
+            });
+            newInPage++;
+          });
+
+          updateFetchProgress({ city, count: listings.length, page, type, newInPage, totalPages });
+          console.log(`[RealtorTracker] ${city} ${type} page ${page}: +${newInPage} (total: ${listings.length})`);
+
+          page++;
+          await new Promise(r => setTimeout(r, CONFIG.DELAY_BETWEEN_PAGES));
+        }
+      } catch (e) {
+        console.error(`[RealtorTracker] Error ${city} ${type} page ${page}:`, e.message);
+        retryCount++;
+        if (retryCount <= 3) {
+          console.log(`[RealtorTracker] Retry ${retryCount}/3 in 5 seconds...`);
+          await new Promise(r => setTimeout(r, 5000));
+        } else {
+          hasMore = false;
+        }
+      }
+    }
+  }
+
+  console.log(`[RealtorTracker] ${city} COMPLETE: ${listings.length} listings`);
+  updateFetchProgress({ city, count: listings.length, page: 0, type: 'complete' });
+  return listings;
+}
+
+function updateFetchProgress(data) {
+  currentFetchProgress = data;
+  // Relay to popup
+  chrome.runtime.sendMessage({ action: 'fetchProgress', ...data }).catch(() => {});
+  // Clear after complete
+  if (data.type === 'complete') {
+    setTimeout(() => { currentFetchProgress = null; }, 3000);
+  }
+}
+
+function parseAddressBg(addressText) {
+  const result = { street: '', city: '', province: '', postalCode: '' };
+  if (!addressText) return result;
+  const parts = addressText.split('|');
+  result.street = parts[0]?.trim() || '';
+  if (parts.length > 1) {
+    const loc = parts[1].trim();
+    const postalMatch = loc.match(/([A-Z]\d[A-Z]\s?\d[A-Z]\d)$/i);
+    if (postalMatch) result.postalCode = postalMatch[1].replace(/\s/g, '').toUpperCase();
+    const locClean = loc.replace(/[A-Z]\d[A-Z]\s?\d[A-Z]\d$/i, '').trim();
+    const cityMatch = locClean.match(/^([^,]+),\s*(\w+)\s*$/);
+    if (cityMatch) {
+      result.city = cityMatch[1].replace(/\s*\([^)]+\)\s*$/, '').trim();
+      result.province = cityMatch[2].trim();
+    }
+  }
+  return result;
+}
+
+function parseRealtorDateBg(dateStr) {
+  if (!dateStr) return '';
+  if (/^\d{17,}$/.test(String(dateStr))) {
+    const ticks = BigInt(dateStr);
+    const ticksToUnix = BigInt('621355968000000000');
+    const ms = Number((ticks - ticksToUnix) / BigInt(10000));
+    const d = new Date(ms);
+    if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+  }
+  const match = String(dateStr).match(/\/Date\((-?\d+)/);
+  if (match) return new Date(parseInt(match[1])).toISOString().split('T')[0];
+  return '';
+}
 
 // Complete list of Ontario cities (must match content.js)
 const ONTARIO_CITIES = [
@@ -165,7 +333,7 @@ async function fetchNextCity() {
     console.log(`[RealtorTracker] ===== Fetching city ${cityIndex + 1}/${ONTARIO_CITIES.length}: ${city} =====`);
 
     // Fetch listings for this city
-    const listings = await fetchCityViaContentScript(city);
+    const listings = await fetchCityDirect(city);
 
     if (listings.length > 0) {
       console.log(`[RealtorTracker] ${city}: Got ${listings.length} listings, syncing...`);
@@ -224,7 +392,7 @@ async function fetchSpecificCity(city) {
     console.log(`[RealtorTracker] ===== Fetching selected city: ${city} =====`);
 
     // Fetch listings for this city
-    const listings = await fetchCityViaContentScript(city);
+    const listings = await fetchCityDirect(city);
 
     if (listings.length > 0) {
       console.log(`[RealtorTracker] ${city}: Got ${listings.length} listings, syncing...`);
@@ -253,115 +421,6 @@ async function fetchSpecificCity(city) {
     console.error('[RealtorTracker] fetchSpecificCity error:', error);
     return { success: false, error: error.message };
   }
-}
-
-// Send progress update to popup
-function sendProgressUpdate(data) {
-  chrome.runtime.sendMessage({
-    action: 'fetchProgress',
-    ...data
-  }).catch(() => {
-    // Popup might not be open, ignore error
-  });
-}
-
-// Fetch a specific city via content script with progress updates
-async function fetchCityViaContentScript(city) {
-  // Check session
-  const hasSession = await hasValidSession();
-  if (!hasSession) {
-    console.log('[RealtorTracker] Capturing session first...');
-    await captureSession();
-  }
-
-  // Send initial progress
-  sendProgressUpdate({
-    city: city,
-    status: 'starting',
-    count: 0,
-    page: 0,
-    type: 'sale'
-  });
-
-  // Find or create realtor.ca tab
-  let tabs = await chrome.tabs.query({ url: 'https://www.realtor.ca/*' });
-  let tab;
-  let createdTab = false;
-
-  if (tabs.length > 0) {
-    tab = tabs[0];
-  } else {
-    tab = await chrome.tabs.create({ url: 'https://www.realtor.ca/map', active: false });
-    createdTab = true;
-    await waitForTabLoad(tab.id);
-    await new Promise(r => setTimeout(r, 5000));
-  }
-
-  // Send fetch request for specific city
-  const maxRetries = 3;
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      console.log(`[RealtorTracker] Fetching ${city} (attempt ${attempt}/${maxRetries})...`);
-
-      const response = await new Promise((resolve, reject) => {
-        chrome.tabs.sendMessage(tab.id, { action: 'fetchCity', city: city }, response => {
-          if (chrome.runtime.lastError) {
-            reject(new Error(chrome.runtime.lastError.message));
-            return;
-          }
-          resolve(response);
-        });
-      });
-
-      if (response && response.success) {
-        // Send completion progress
-        sendProgressUpdate({
-          city: city,
-          status: 'complete',
-          count: response.listings?.length || 0,
-          page: 0,
-          type: 'done'
-        });
-        return response.listings || [];
-      } else {
-        throw new Error(response?.error || 'No response');
-      }
-    } catch (error) {
-      console.log(`[RealtorTracker] Attempt ${attempt} failed:`, error.message);
-      if (attempt < maxRetries) {
-        await new Promise(r => setTimeout(r, 5000));
-        // Reload tab
-        await chrome.tabs.reload(tab.id);
-        await waitForTabLoad(tab.id);
-        await new Promise(r => setTimeout(r, 5000));
-      }
-    }
-  }
-
-  sendProgressUpdate({
-    city: city,
-    status: 'error',
-    count: 0
-  });
-
-  return [];
-}
-
-// Helper: Wait for tab to finish loading
-function waitForTabLoad(tabId) {
-  return new Promise(resolve => {
-    const listener = (id, info) => {
-      if (id === tabId && info.status === 'complete') {
-        chrome.tabs.onUpdated.removeListener(listener);
-        resolve();
-      }
-    };
-    chrome.tabs.onUpdated.addListener(listener);
-    setTimeout(() => {
-      chrome.tabs.onUpdated.removeListener(listener);
-      resolve();
-    }, 30000);
-  });
 }
 
 // Fetch all cities sequentially (manual trigger)
