@@ -32,11 +32,17 @@ async function fetchRealtorAPI(transactionType = 'sale', page = 1, cityName = nu
     params.append('LocationSearchString', cityName);
   }
 
+  // Get cookies for authentication
+  const cookies = await chrome.cookies.getAll({ domain: '.realtor.ca' });
+  const cookieString = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+
   const response = await fetch('https://api2.realtor.ca/Listing.svc/PropertySearch_Post', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-      'Accept': '*/*'
+      'Accept': '*/*',
+      'Accept-Language': 'en-CA,en-US;q=0.9,en;q=0.8',
+      'Cookie': cookieString
     },
     body: params.toString()
   });
@@ -52,6 +58,27 @@ async function fetchRealtorAPI(transactionType = 'sale', page = 1, cityName = nu
 
 // Fetch all listings for a city directly from background
 async function fetchCityDirect(city) {
+  // Ensure we have cookies (user must visit realtor.ca first)
+  const cookies = await chrome.cookies.getAll({ domain: '.realtor.ca' });
+  if (cookies.length === 0) {
+    console.log('[RealtorTracker] No cookies found, opening realtor.ca to get session...');
+    // Open realtor.ca to get cookies
+    const tab = await chrome.tabs.create({ url: 'https://www.realtor.ca/map', active: true });
+    // Wait for page to load and set cookies
+    await new Promise(resolve => {
+      const listener = (tabId, info) => {
+        if (tabId === tab.id && info.status === 'complete') {
+          chrome.tabs.onUpdated.removeListener(listener);
+          resolve();
+        }
+      };
+      chrome.tabs.onUpdated.addListener(listener);
+    });
+    await new Promise(r => setTimeout(r, 3000)); // Extra wait for cookies
+    // Move tab to background
+    await chrome.tabs.update(tab.id, { active: false });
+  }
+
   const listings = [];
   const seenMls = new Set();
 
