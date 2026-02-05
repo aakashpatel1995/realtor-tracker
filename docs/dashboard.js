@@ -7,7 +7,7 @@ const CONFIG = {
 
 let autoRefreshTimer = null;
 let listingsData = null;
-let currentAgeFilter = '7';
+let currentAgeFilter = 'today';
 let currentSort = 'date-oldest';
 let currentCityFilter = '';
 let currentPostalFilter = '';
@@ -319,6 +319,7 @@ function updateListingsByAge(data) {
   listingsData = data;
 
   // Update counts
+  document.getElementById('countToday').textContent = data.counts?.today || 0;
   document.getElementById('count7').textContent = data.counts?.day7 || 0;
   document.getElementById('count30').textContent = data.counts?.day30 || 0;
   document.getElementById('count90').textContent = data.counts?.day90 || 0;
@@ -337,6 +338,7 @@ function populateCityFilter(data) {
   // Collect all unique cities from all age groups
   const cities = new Set();
   const allListings = [
+    ...(data.newToday || []),
     ...(data.olderThan7Days || []),
     ...(data.olderThan30Days || []),
     ...(data.olderThan90Days || []),
@@ -389,6 +391,7 @@ function renderListings() {
 
   let listings;
   switch (currentAgeFilter) {
+    case 'today': listings = listingsData.newToday ? [...listingsData.newToday] : []; break;
     case '7': listings = listingsData.olderThan7Days ? [...listingsData.olderThan7Days] : []; break;
     case '30': listings = listingsData.olderThan30Days ? [...listingsData.olderThan30Days] : []; break;
     case '90': listings = listingsData.olderThan90Days ? [...listingsData.olderThan90Days] : []; break;

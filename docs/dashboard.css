@@ -601,6 +601,24 @@ footer {
   color: white;
 }
 
+.age-tab[data-age="today"] {
+  border: 2px solid var(--success);
+}
+
+.age-tab[data-age="today"].active {
+  background: var(--success);
+}
+
+.age-tab[data-age="today"] span {
+  background: rgba(72, 187, 120, 0.2);
+  color: var(--success);
+}
+
+.age-tab[data-age="today"].active span {
+  background: rgba(255, 255, 255, 0.3);
+  color: white;
+}
+
 .listings-container {
   background: white;
   border-radius: 16px;
