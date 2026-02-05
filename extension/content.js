@@ -10,10 +10,10 @@ const GTA_BOUNDS = {
 
 // Configuration for fetching
 const FETCH_CONFIG = {
-  MAX_PAGES_PER_TYPE: 100,  // Max pages per transaction type (100 * 200 = 20,000 per type)
+  MAX_PAGES_PER_TYPE: 50,   // Max pages per transaction type (50 * 200 = 10,000 per type)
   RECORDS_PER_PAGE: 200,
-  DELAY_BETWEEN_PAGES: 800,  // ms delay to avoid rate limiting
-  DELAY_BETWEEN_AREAS: 2000  // ms delay between geographic areas
+  DELAY_BETWEEN_PAGES: 1500,  // ms delay to avoid rate limiting (increased)
+  DELAY_BETWEEN_AREAS: 3000   // ms delay between geographic areas (increased)
 };
 
 async function fetchRealtorListings(transactionType = 'sale', page = 1, bounds = GTA_BOUNDS) {
