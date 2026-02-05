@@ -8,6 +8,7 @@ const CONFIG = {
 let autoRefreshTimer = null;
 let listingsData = null;
 let currentAgeFilter = '7';
+let currentSort = 'date-oldest';
 
 // Initialize dashboard
 document.addEventListener('DOMContentLoaded', () => {
@@ -261,14 +262,27 @@ function showToast(message, type = '') {
 }
 
 function setupAgeTabs() {
+  // Age tab click handlers
   document.querySelectorAll('.age-tab').forEach(tab => {
-    tab.addEventListener('click', () => {
+    tab.addEventListener('click', (e) => {
+      e.preventDefault();
       document.querySelectorAll('.age-tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
       currentAgeFilter = tab.dataset.age;
+      console.log('[Dashboard] Age filter changed to:', currentAgeFilter);
       renderListings();
     });
   });
+
+  // Sort dropdown handler
+  const sortSelect = document.getElementById('sortBy');
+  if (sortSelect) {
+    sortSelect.addEventListener('change', (e) => {
+      currentSort = e.target.value;
+      console.log('[Dashboard] Sort changed to:', currentSort);
+      renderListings();
+    });
+  }
 }
 
 function updateListingsByAge(data) {
@@ -297,10 +311,10 @@ function renderListings() {
 
   let listings;
   switch (currentAgeFilter) {
-    case '7': listings = listingsData.olderThan7Days; break;
-    case '30': listings = listingsData.olderThan30Days; break;
-    case '90': listings = listingsData.olderThan90Days; break;
-    case '365': listings = listingsData.olderThan1Year; break;
+    case '7': listings = listingsData.olderThan7Days ? [...listingsData.olderThan7Days] : []; break;
+    case '30': listings = listingsData.olderThan30Days ? [...listingsData.olderThan30Days] : []; break;
+    case '90': listings = listingsData.olderThan90Days ? [...listingsData.olderThan90Days] : []; break;
+    case '365': listings = listingsData.olderThan1Year ? [...listingsData.olderThan1Year] : []; break;
     default: listings = [];
   }
 
@@ -308,6 +322,9 @@ function renderListings() {
     container.innerHTML = '<div class="listings-empty">No listings found in this category</div>';
     return;
   }
+
+  // Apply sorting
+  listings = sortListings(listings, currentSort);
 
   let html = `
     <div class="listings-header">
@@ -407,4 +424,51 @@ function formatListedDate(dateStr) {
     day: 'numeric',
     year: 'numeric'
   });
+}
+
+function sortListings(listings, sortBy) {
+  const sorted = [...listings];
+
+  switch (sortBy) {
+    case 'date-oldest':
+      // Oldest first (longest on market)
+      sorted.sort((a, b) => {
+        const dateA = a.Listed_Date || a.First_Seen || '';
+        const dateB = b.Listed_Date || b.First_Seen || '';
+        return dateA.localeCompare(dateB);
+      });
+      break;
+    case 'date-newest':
+      // Newest first (most recently listed)
+      sorted.sort((a, b) => {
+        const dateA = a.Listed_Date || a.First_Seen || '';
+        const dateB = b.Listed_Date || b.First_Seen || '';
+        return dateB.localeCompare(dateA);
+      });
+      break;
+    case 'price-low':
+      // Price low to high
+      sorted.sort((a, b) => {
+        const priceA = parsePrice(a.Price);
+        const priceB = parsePrice(b.Price);
+        return priceA - priceB;
+      });
+      break;
+    case 'price-high':
+      // Price high to low
+      sorted.sort((a, b) => {
+        const priceA = parsePrice(a.Price);
+        const priceB = parsePrice(b.Price);
+        return priceB - priceA;
+      });
+      break;
+  }
+
+  return sorted;
+}
+
+function parsePrice(price) {
+  if (!price) return 0;
+  if (typeof price === 'number') return price;
+  return parseInt(String(price).replace(/[^0-9]/g, '')) || 0;
 }

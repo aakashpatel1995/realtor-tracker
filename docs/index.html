@@ -100,7 +100,18 @@
       </section>
 
       <section class="listings-section">
-        <h2>Listings by Age</h2>
+        <div class="listings-header-row">
+          <h2>Listings by Age</h2>
+          <div class="sort-controls">
+            <label for="sortBy">Sort by:</label>
+            <select id="sortBy" class="sort-select">
+              <option value="date-oldest">Oldest First</option>
+              <option value="date-newest">Newest First</option>
+              <option value="price-low">Price: Low to High</option>
+              <option value="price-high">Price: High to Low</option>
+            </select>
+          </div>
+        </div>
         <div class="age-tabs">
           <button class="age-tab active" data-age="7">7+ Days <span id="count7">0</span></button>
           <button class="age-tab" data-age="30">30+ Days <span id="count30">0</span></button>
