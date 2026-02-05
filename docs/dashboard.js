@@ -307,10 +307,12 @@ function renderListings() {
 
   let html = `
     <div class="listings-header">
+      <div class="col-mls">MLS #</div>
       <div class="col-address">Address</div>
       <div class="col-price">Price</div>
       <div class="col-details">Details</div>
-      <div class="col-age">Days Listed</div>
+      <div class="col-age">Days</div>
+      <div class="col-action">Link</div>
     </div>
   `;
 
@@ -319,9 +321,11 @@ function renderListings() {
     const price = formatPrice(listing.Price);
     const details = formatDetails(listing);
     const url = listing.URL || '#';
+    const hasUrl = listing.URL && listing.URL !== '#' && listing.URL.includes('realtor.ca');
 
     html += `
-      <a href="${url}" target="_blank" class="listing-row ${listing.Type}">
+      <div class="listing-row ${listing.Type}">
+        <div class="col-mls">${listing.MLS_Number || 'N/A'}</div>
         <div class="col-address">
           <div class="listing-address">${listing.Address || 'N/A'}</div>
           <div class="listing-type">${listing.PropertyType || listing.Type}</div>
@@ -329,9 +333,12 @@ function renderListings() {
         <div class="col-price">${price}</div>
         <div class="col-details">${details}</div>
         <div class="col-age">
-          <span class="days-badge ${getDaysClass(daysListed)}">${daysListed} days</span>
+          <span class="days-badge ${getDaysClass(daysListed)}">${daysListed}</span>
         </div>
-      </a>
+        <div class="col-action">
+          ${hasUrl ? `<a href="${url}" target="_blank" class="view-btn">View</a>` : '<span class="no-link">-</span>'}
+        </div>
+      </div>
     `;
   });
 

@@ -553,7 +553,7 @@ footer {
 
 .listings-header {
   display: grid;
-  grid-template-columns: 2fr 1fr 2fr 100px;
+  grid-template-columns: 100px 2fr 100px 1.5fr 60px 70px;
   padding: 16px 24px;
   background: var(--gray-100);
   font-weight: 600;
@@ -566,12 +566,13 @@ footer {
 
 .listing-row {
   display: grid;
-  grid-template-columns: 2fr 1fr 2fr 100px;
+  grid-template-columns: 100px 2fr 100px 1.5fr 60px 70px;
   padding: 16px 24px;
   border-bottom: 1px solid var(--gray-200);
   text-decoration: none;
   color: inherit;
   transition: background 0.2s;
+  align-items: center;
 }
 
 .listing-row:hover {
@@ -588,6 +589,36 @@ footer {
 
 .listing-row.rent {
   border-left: 4px solid var(--secondary);
+}
+
+.col-mls {
+  font-family: monospace;
+  font-size: 0.85rem;
+  color: var(--gray-600);
+}
+
+.view-btn {
+  display: inline-block;
+  padding: 6px 12px;
+  background: var(--primary);
+  color: white;
+  text-decoration: none;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  transition: background 0.2s;
+}
+
+.view-btn:hover {
+  background: var(--primary-dark);
+}
+
+.no-link {
+  color: var(--gray-400);
+}
+
+.col-action {
+  text-align: center;
 }
 
 .listing-address {
@@ -693,7 +724,7 @@ footer {
   }
 
   .listing-row {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 1fr;
     gap: 8px;
   }
 
@@ -707,11 +738,28 @@ footer {
     border-top-color: var(--secondary);
   }
 
+  .col-address {
+    grid-column: 1 / -1;
+  }
+
+  .col-mls {
+    font-size: 0.75rem;
+  }
+
   .col-price {
-    font-size: 1.2rem;
+    font-size: 1.1rem;
+  }
+
+  .col-details {
+    grid-column: 1 / -1;
+    font-size: 0.85rem;
   }
 
   .col-age {
     justify-content: flex-start;
+  }
+
+  .col-action {
+    text-align: right;
   }
 }
