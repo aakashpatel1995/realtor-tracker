@@ -44,6 +44,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Load city dropdown
   loadCityDropdown();
 
+  // Restore fetch progress if there's an ongoing fetch
+  restoreFetchProgress();
+
   // Toggle config section
   configBtn.addEventListener('click', () => {
     configSection.classList.toggle('hidden');
@@ -282,6 +285,15 @@ document.addEventListener('DOMContentLoaded', async () => {
           option.textContent = city;
           citySelect.appendChild(option);
         });
+      }
+    });
+  }
+
+  function restoreFetchProgress() {
+    chrome.runtime.sendMessage({ action: 'getFetchProgress' }, (response) => {
+      if (response && response.progress) {
+        console.log('[RealtorTracker] Restoring fetch progress:', response.progress);
+        updateProgressDisplay(response.progress);
       }
     });
   }

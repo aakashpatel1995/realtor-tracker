@@ -5,6 +5,9 @@ const CONFIG = {
   CITY_FETCH_INTERVAL_MINUTES: 15  // Fetch one city every 15 minutes
 };
 
+// Current fetch progress (persists while popup is closed)
+let currentFetchProgress = null;
+
 // Complete list of Ontario cities (must match content.js)
 const ONTARIO_CITIES = [
   'Cambridge, ON', 'Kitchener, ON', 'Waterloo, ON',
@@ -97,18 +100,35 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return false;
   }
   if (request.action === 'cityFetchProgress') {
-    // Relay progress from content script to popup
-    chrome.runtime.sendMessage({
-      action: 'fetchProgress',
+    // Store progress so popup can retrieve it when reopened
+    currentFetchProgress = {
       city: request.city,
       count: request.count,
       page: request.page,
       type: request.type,
       newInPage: request.newInPage,
       totalPages: request.totalPages
+    };
+
+    // Clear progress when complete
+    if (request.type === 'complete') {
+      setTimeout(() => {
+        currentFetchProgress = null;
+      }, 3000);
+    }
+
+    // Relay progress from content script to popup
+    chrome.runtime.sendMessage({
+      action: 'fetchProgress',
+      ...currentFetchProgress
     }).catch(() => {
       // Popup might not be open, ignore error
     });
+    return false;
+  }
+  if (request.action === 'getFetchProgress') {
+    // Return current fetch progress (for popup restore on reopen)
+    sendResponse({ progress: currentFetchProgress });
     return false;
   }
 });
