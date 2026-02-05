@@ -146,18 +146,14 @@ async function fetchRealtorListings(transactionType = 'sale', page = 1, cityName
   }
 
   try {
+    // Simple fetch - let browser handle headers automatically
     const response = await fetch('https://api2.realtor.ca/Listing.svc/PropertySearch_Post', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': '*/*',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Origin': 'https://www.realtor.ca',
-        'Referer': 'https://www.realtor.ca/'
+        'Content-Type': 'application/x-www-form-urlencoded'
       },
       body: params.toString(),
-      credentials: 'include',
-      mode: 'cors'
+      credentials: 'include'
     });
 
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -168,6 +164,7 @@ async function fetchRealtorListings(transactionType = 'sale', page = 1, cityName
       totalPages: data.Paging?.TotalPages || 0
     };
   } catch (error) {
+    console.error(`[RealtorTracker] Fetch error details:`, error.name, error.message, error);
     // Retry up to 2 times with delay
     if (retryAttempt < 2) {
       console.log(`[RealtorTracker] Fetch failed, retrying in 3s (attempt ${retryAttempt + 1}/2)...`);
