@@ -443,12 +443,14 @@ async function captureSession() {
       sessionCapturedAt: new Date().toISOString()
     });
 
-    // Close the tab if we created it
+    // Keep the tab open - we need it for fetching listings
+    // Just minimize/unfocus it if we created it
     if (createdTab) {
-      await chrome.tabs.remove(tab.id);
+      // Move tab to background instead of closing
+      await chrome.tabs.update(tab.id, { active: false });
     }
 
-    return { success: true, cookieCount: cookies.length };
+    return { success: true, cookieCount: cookies.length, tabId: tab.id };
   } catch (error) {
     console.error('[RealtorTracker] Session capture error:', error);
     return { success: false, error: error.message };
