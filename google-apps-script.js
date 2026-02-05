@@ -605,3 +605,92 @@ function syncStatus(activeIds, soldIds, totalActive) {
 
   return { success: true, updates: updatesCount };
 }
+
+/**
+ * Remove duplicate listings - keeps the row with earliest First_Seen date
+ * Run this manually from Apps Script editor: Run > removeDuplicates
+ */
+function removeDuplicates() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LISTINGS_SHEET);
+  const data = sheet.getDataRange().getValues();
+
+  if (data.length <= 1) {
+    Logger.log('No data to process');
+    return { removed: 0, message: 'No data to process' };
+  }
+
+  const mlsMap = new Map(); // MLS -> { rowIndex, firstSeen }
+  const rowsToDelete = [];
+
+  // First pass: find duplicates (skip header row)
+  for (let i = 1; i < data.length; i++) {
+    const mls = String(data[i][COL.MLS]);
+    const firstSeen = data[i][COL.FIRST_SEEN];
+
+    if (!mls) continue;
+
+    if (mlsMap.has(mls)) {
+      const existing = mlsMap.get(mls);
+      // Keep the one with earlier First_Seen, delete the other
+      if (firstSeen && existing.firstSeen && firstSeen < existing.firstSeen) {
+        // Current row is older, keep it and mark existing for deletion
+        rowsToDelete.push(existing.rowIndex);
+        mlsMap.set(mls, { rowIndex: i + 1, firstSeen: firstSeen }); // +1 for 1-based index
+      } else {
+        // Existing is older or equal, mark current for deletion
+        rowsToDelete.push(i + 1); // +1 for 1-based index
+      }
+    } else {
+      mlsMap.set(mls, { rowIndex: i + 1, firstSeen: firstSeen }); // +1 for 1-based index
+    }
+  }
+
+  // Sort rows to delete in descending order (delete from bottom up)
+  rowsToDelete.sort((a, b) => b - a);
+
+  // Delete duplicate rows
+  rowsToDelete.forEach(rowIndex => {
+    sheet.deleteRow(rowIndex);
+  });
+
+  const message = `Removed ${rowsToDelete.length} duplicate listings`;
+  Logger.log(message);
+
+  return { removed: rowsToDelete.length, message: message };
+}
+
+/**
+ * Count duplicates without removing them (preview)
+ * Run this manually: Run > countDuplicates
+ */
+function countDuplicates() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LISTINGS_SHEET);
+  const data = sheet.getDataRange().getValues();
+
+  const mlsCount = new Map();
+
+  for (let i = 1; i < data.length; i++) {
+    const mls = String(data[i][COL.MLS]);
+    if (!mls) continue;
+    mlsCount.set(mls, (mlsCount.get(mls) || 0) + 1);
+  }
+
+  let duplicateCount = 0;
+  const duplicates = [];
+
+  mlsCount.forEach((count, mls) => {
+    if (count > 1) {
+      duplicateCount += count - 1; // Extra copies
+      duplicates.push({ mls, count });
+    }
+  });
+
+  Logger.log(`Found ${duplicateCount} duplicate rows across ${duplicates.length} MLS numbers`);
+  Logger.log('Sample duplicates: ' + JSON.stringify(duplicates.slice(0, 10)));
+
+  return {
+    duplicateRows: duplicateCount,
+    uniqueMlsWithDupes: duplicates.length,
+    samples: duplicates.slice(0, 10)
+  };
+}

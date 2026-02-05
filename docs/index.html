@@ -116,8 +116,8 @@
             <div class="filter-group">
               <label for="sortBy">Sort by:</label>
               <select id="sortBy" class="filter-select">
-                <option value="date-oldest">Oldest First</option>
                 <option value="date-newest">Newest First</option>
+                <option value="date-oldest">Oldest First</option>
                 <option value="price-low">Price: Low to High</option>
                 <option value="price-high">Price: High to Low</option>
                 <option value="city">City A-Z</option>
@@ -127,7 +127,8 @@
           </div>
         </div>
         <div class="age-tabs">
-          <button class="age-tab active" data-age="today">New Today <span id="countToday">0</span></button>
+          <button class="age-tab recent-tab active" data-age="recent">Recently Added <span id="countRecent">0</span></button>
+          <button class="age-tab" data-age="today">New Today <span id="countToday">0</span></button>
           <button class="age-tab sold-tab" data-age="sold">Sold/Delisted <span id="countSold">0</span></button>
           <button class="age-tab" data-age="7">7+ Days <span id="count7">0</span></button>
           <button class="age-tab" data-age="30">30+ Days <span id="count30">0</span></button>

@@ -275,4 +275,60 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('currentCity').textContent = status.currentCity || '-';
     document.getElementById('lastCityFetched').textContent = status.lastCityFetched || 'None';
   }
+
+  // Listen for progress updates from background script
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === 'fetchProgress' || message.action === 'cityFetchProgress') {
+      updateProgressDisplay(message);
+    }
+  });
+
+  function updateProgressDisplay(data) {
+    const progressSection = document.getElementById('fetch-progress');
+    const progressCity = document.getElementById('progressCity');
+    const progressCount = document.getElementById('progressCount');
+    const progressBar = document.getElementById('progressBar');
+    const progressType = document.getElementById('progressType');
+    const progressPage = document.getElementById('progressPage');
+    const progressNew = document.getElementById('progressNew');
+
+    if (data.type === 'starting') {
+      // Show progress section when fetch starts
+      progressSection.classList.remove('hidden');
+      progressCity.textContent = `Fetching: ${data.city}`;
+      progressCount.textContent = '0';
+      progressBar.style.width = '0%';
+      progressType.textContent = 'starting';
+      progressPage.textContent = '1';
+      progressNew.textContent = '+0 new';
+    } else if (data.type === 'complete') {
+      // Update final count and show completion
+      progressCity.textContent = `Done: ${data.city}`;
+      progressCount.textContent = data.count.toLocaleString();
+      progressBar.style.width = '100%';
+      progressType.textContent = 'complete';
+      progressNew.textContent = `${data.count.toLocaleString()} total`;
+
+      // Hide progress section after 3 seconds
+      setTimeout(() => {
+        progressSection.classList.add('hidden');
+        loadScheduleStatus();
+      }, 3000);
+    } else {
+      // In-progress update (sale or rent)
+      progressSection.classList.remove('hidden');
+      progressCity.textContent = `Fetching: ${data.city}`;
+      progressCount.textContent = data.count.toLocaleString();
+      progressType.textContent = data.type;
+      progressPage.textContent = data.page || '1';
+      progressNew.textContent = `+${data.newInPage || 0} new`;
+
+      // Calculate progress bar percentage
+      if (data.totalPages && data.totalPages > 0) {
+        const typeOffset = data.type === 'rent' ? 50 : 0;
+        const pageProgress = (data.page / data.totalPages) * 50;
+        progressBar.style.width = `${typeOffset + pageProgress}%`;
+      }
+    }
+  }
 });

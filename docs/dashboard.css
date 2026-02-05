@@ -601,6 +601,24 @@ footer {
   color: white;
 }
 
+.age-tab[data-age="recent"] {
+  border: 2px solid #3182ce;
+}
+
+.age-tab[data-age="recent"].active {
+  background: #3182ce;
+}
+
+.age-tab[data-age="recent"] span {
+  background: rgba(49, 130, 206, 0.2);
+  color: #3182ce;
+}
+
+.age-tab[data-age="recent"].active span {
+  background: rgba(255, 255, 255, 0.3);
+  color: white;
+}
+
 .age-tab[data-age="today"] {
   border: 2px solid var(--success);
 }

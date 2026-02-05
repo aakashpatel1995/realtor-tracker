@@ -88,6 +88,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log('[RealtorTracker] Content script ready on tab:', sender.tab?.id);
     return false;
   }
+  if (request.action === 'cityFetchProgress') {
+    // Relay progress from content script to popup
+    chrome.runtime.sendMessage({
+      action: 'fetchProgress',
+      city: request.city,
+      count: request.count,
+      page: request.page,
+      type: request.type,
+      newInPage: request.newInPage,
+      totalPages: request.totalPages
+    }).catch(() => {
+      // Popup might not be open, ignore error
+    });
+    return false;
+  }
 });
 
 // Get current schedule status
@@ -166,7 +181,17 @@ async function fetchNextCity() {
   }
 }
 
-// Fetch a specific city via content script
+// Send progress update to popup
+function sendProgressUpdate(data) {
+  chrome.runtime.sendMessage({
+    action: 'fetchProgress',
+    ...data
+  }).catch(() => {
+    // Popup might not be open, ignore error
+  });
+}
+
+// Fetch a specific city via content script with progress updates
 async function fetchCityViaContentScript(city) {
   // Check session
   const hasSession = await hasValidSession();
@@ -174,6 +199,15 @@ async function fetchCityViaContentScript(city) {
     console.log('[RealtorTracker] Capturing session first...');
     await captureSession();
   }
+
+  // Send initial progress
+  sendProgressUpdate({
+    city: city,
+    status: 'starting',
+    count: 0,
+    page: 0,
+    type: 'sale'
+  });
 
   // Find or create realtor.ca tab
   let tabs = await chrome.tabs.query({ url: 'https://www.realtor.ca/*' });
@@ -206,6 +240,14 @@ async function fetchCityViaContentScript(city) {
       });
 
       if (response && response.success) {
+        // Send completion progress
+        sendProgressUpdate({
+          city: city,
+          status: 'complete',
+          count: response.listings?.length || 0,
+          page: 0,
+          type: 'done'
+        });
         return response.listings || [];
       } else {
         throw new Error(response?.error || 'No response');
@@ -221,6 +263,12 @@ async function fetchCityViaContentScript(city) {
       }
     }
   }
+
+  sendProgressUpdate({
+    city: city,
+    status: 'error',
+    count: 0
+  });
 
   return [];
 }

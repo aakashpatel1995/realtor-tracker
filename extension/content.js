@@ -164,12 +164,30 @@ async function fetchRealtorListings(transactionType = 'sale', page = 1, cityName
   };
 }
 
+// Send progress update to background script
+function sendProgress(city, count, page, type, newInPage = 0, totalPages = 0) {
+  try {
+    chrome.runtime.sendMessage({
+      action: 'cityFetchProgress',
+      city: city,
+      count: count,
+      page: page,
+      type: type,
+      newInPage: newInPage,
+      totalPages: totalPages
+    });
+  } catch (e) {
+    // Background might not be listening
+  }
+}
+
 // Fetch listings for a single city
 async function fetchCityListings(city) {
   const listings = [];
   const seenMls = new Set();
 
   console.log(`\n[RealtorTracker] ========== Fetching: ${city} ==========`);
+  sendProgress(city, 0, 0, 'starting');
 
   for (let type of ['sale', 'rent']) {
     console.log(`[RealtorTracker] ${city} - ${type.toUpperCase()}...`);
@@ -191,6 +209,7 @@ async function fetchCityListings(city) {
           hasMore = false;
         } else {
           retryCount = 0;
+          let newInPage = 0;
 
           results.forEach(listing => {
             if (seenMls.has(listing.MlsNumber)) return;
@@ -225,9 +244,13 @@ async function fetchCityListings(city) {
               postedDate: postedDate
             });
             typeCount++;
+            newInPage++;
           });
 
-          console.log(`[RealtorTracker] ${city} ${type} page ${page}: +${results.length} (total: ${typeCount})`);
+          // Send progress update after each page
+          sendProgress(city, listings.length, page, type, newInPage, totalPages);
+
+          console.log(`[RealtorTracker] ${city} ${type} page ${page}: +${newInPage} (total: ${listings.length})`);
           page++;
           await new Promise(r => setTimeout(r, FETCH_CONFIG.DELAY_BETWEEN_PAGES));
         }
@@ -247,6 +270,7 @@ async function fetchCityListings(city) {
   }
 
   console.log(`[RealtorTracker] ${city} COMPLETE: ${listings.length} listings`);
+  sendProgress(city, listings.length, 0, 'complete');
   return listings;
 }
 

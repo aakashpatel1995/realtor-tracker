@@ -7,8 +7,8 @@ const CONFIG = {
 
 let autoRefreshTimer = null;
 let listingsData = null;
-let currentAgeFilter = 'today';
-let currentSort = 'date-oldest';
+let currentAgeFilter = 'recent';
+let currentSort = 'date-newest';
 let currentCityFilter = '';
 let currentPostalFilter = '';
 
@@ -272,6 +272,14 @@ function setupAgeTabs() {
       tab.classList.add('active');
       currentAgeFilter = tab.dataset.age;
       console.log('[Dashboard] Age filter changed to:', currentAgeFilter);
+
+      // Auto-switch sort to "newest first" for Recently Added tab
+      if (currentAgeFilter === 'recent') {
+        currentSort = 'date-newest';
+        const sortSelect = document.getElementById('sortBy');
+        if (sortSelect) sortSelect.value = 'date-newest';
+      }
+
       renderListings();
     });
   });
@@ -318,7 +326,12 @@ function updateListingsByAge(data) {
 
   listingsData = data;
 
+  // Calculate recent count (all listings from last 7 days by listed date)
+  const recentListings = getRecentListings(data);
+  const recentCount = recentListings.length;
+
   // Update counts
+  document.getElementById('countRecent').textContent = recentCount;
   document.getElementById('countToday').textContent = data.counts?.today || 0;
   document.getElementById('countSold').textContent = data.counts?.sold || 0;
   document.getElementById('count7').textContent = data.counts?.day7 || 0;
@@ -383,6 +396,46 @@ function populateCityFilter(data) {
   }
 }
 
+// Get all listings from last 7 days by listed date (newest first)
+function getRecentListings(data) {
+  if (!data) return [];
+
+  const now = new Date();
+  const sevenDaysAgo = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000));
+  const seen = new Set();
+
+  // Collect all active listings
+  const allListings = [
+    ...(data.newToday || []),
+    ...(data.olderThan7Days || []),
+    ...(data.olderThan30Days || []),
+    ...(data.olderThan90Days || []),
+    ...(data.olderThan1Year || [])
+  ];
+
+  // Filter to last 7 days by listed date and dedupe
+  const recentListings = allListings.filter(listing => {
+    const mls = listing.MLS_Number;
+    if (seen.has(mls)) return false;
+    seen.add(mls);
+
+    const listedDate = listing.Listed_Date || listing.First_Seen;
+    if (!listedDate) return false;
+
+    const date = new Date(listedDate);
+    return date >= sevenDaysAgo;
+  });
+
+  // Sort by listed date descending (newest first)
+  recentListings.sort((a, b) => {
+    const dateA = a.Listed_Date || a.First_Seen || '';
+    const dateB = b.Listed_Date || b.First_Seen || '';
+    return dateB.localeCompare(dateA);
+  });
+
+  return recentListings;
+}
+
 function renderListings() {
   const container = document.getElementById('listingsContainer');
 
@@ -393,6 +446,7 @@ function renderListings() {
 
   let listings;
   switch (currentAgeFilter) {
+    case 'recent': listings = getRecentListings(listingsData); break;
     case 'today': listings = listingsData.newToday ? [...listingsData.newToday] : []; break;
     case 'sold': listings = listingsData.soldToday ? [...listingsData.soldToday] : []; break;
     case '7': listings = listingsData.olderThan7Days ? [...listingsData.olderThan7Days] : []; break;
