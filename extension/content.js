@@ -55,13 +55,16 @@ async function fetchAllListings() {
         } else {
           // DEBUG: Log the first listing to check available fields
           if (page === 1 && type === 'sale' && !window.hasLoggedListing) {
-            console.log('[RealtorTracker] First listing structure:', results[0]);
-            console.log('[RealtorTracker] Date fields check:', {
-              InsertedDateUTC: results[0].InsertedDateUTC,
-              TimeOnRealtor: results[0].TimeOnRealtor,
-              Property_TimeOnRealtor: results[0].Property?.TimeOnRealtor,
-              ListedOn: results[0].ListedOn
-            });
+            console.log('[RealtorTracker] === FIRST LISTING FULL STRUCTURE ===');
+            console.log(JSON.stringify(results[0], null, 2));
+            console.log('[RealtorTracker] === DATE FIELDS CHECK ===');
+            console.log('InsertedDateUTC:', results[0].InsertedDateUTC);
+            console.log('TimeOnRealtor:', results[0].TimeOnRealtor);
+            console.log('Property.TimeOnRealtor:', results[0].Property?.TimeOnRealtor);
+            console.log('Property.OwnershipType:', results[0].Property?.OwnershipType);
+            console.log('PostalCode:', results[0].PostalCode);
+            // Log all top-level keys to find date fields
+            console.log('[RealtorTracker] All top-level keys:', Object.keys(results[0]));
             window.hasLoggedListing = true;
           }
 
