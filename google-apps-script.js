@@ -422,6 +422,103 @@ function testSetup() {
   Logger.log('Setup complete! You can now deploy as web app.');
 }
 
+/**
+ * Parse existing addresses and fill City, Province, PostalCode columns
+ * Run this function manually to backfill location data for existing listings
+ * Address format: "408 FAIRALL STREET|Ajax (South West), Ontario L1S1R6"
+ */
+function parseExistingAddresses() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LISTINGS_SHEET);
+  const data = sheet.getDataRange().getValues();
+
+  let updatedCount = 0;
+
+  // Skip header row
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    const address = row[COL.ADDRESS] || '';
+    const existingCity = row[COL.CITY] || '';
+    const existingProvince = row[COL.PROVINCE] || '';
+    const existingPostal = row[COL.POSTAL_CODE] || '';
+
+    // Skip if already has location data
+    if (existingCity && existingProvince && existingPostal) {
+      continue;
+    }
+
+    // Parse the address
+    const parsed = parseAddressText(address);
+
+    if (parsed.city || parsed.province || parsed.postalCode) {
+      // Update only empty fields
+      const newCity = existingCity || parsed.city;
+      const newProvince = existingProvince || parsed.province;
+      const newPostal = existingPostal || parsed.postalCode;
+
+      // Update the row (columns 16, 17, 18 = City, Province, PostalCode)
+      sheet.getRange(i + 1, COL.CITY + 1).setValue(newCity);
+      sheet.getRange(i + 1, COL.PROVINCE + 1).setValue(newProvince);
+      sheet.getRange(i + 1, COL.POSTAL_CODE + 1).setValue(newPostal);
+
+      updatedCount++;
+    }
+  }
+
+  Logger.log('Updated ' + updatedCount + ' rows with parsed address data');
+  return { success: true, updatedRows: updatedCount };
+}
+
+/**
+ * Parse address text to extract city, province, postal code
+ * Format: "Street Address|City (Area), Province PostalCode"
+ * Example: "408 FAIRALL STREET|Ajax (South West), Ontario L1S1R6"
+ */
+function parseAddressText(addressText) {
+  const result = {
+    street: '',
+    city: '',
+    province: '',
+    postalCode: ''
+  };
+
+  if (!addressText) return result;
+
+  // Split by pipe to get street and location
+  const parts = String(addressText).split('|');
+  result.street = parts[0] ? parts[0].trim() : '';
+
+  if (parts.length > 1) {
+    const locationPart = parts[1].trim();
+
+    // Extract postal code (last 6-7 alphanumeric, Canadian format: A1A 1A1 or A1A1A1)
+    const postalMatch = locationPart.match(/([A-Z]\d[A-Z]\s?\d[A-Z]\d)\s*$/i);
+    if (postalMatch) {
+      result.postalCode = postalMatch[1].replace(/\s/g, '').toUpperCase();
+    }
+
+    // Remove postal code for further parsing
+    let locationWithoutPostal = locationPart;
+    if (postalMatch) {
+      locationWithoutPostal = locationPart.substring(0, locationPart.lastIndexOf(postalMatch[1])).trim();
+    }
+
+    // Pattern: "City (Area), Province" or "City, Province"
+    const commaIndex = locationWithoutPostal.lastIndexOf(',');
+    if (commaIndex !== -1) {
+      // Everything before last comma is city (may include area in parentheses)
+      let cityPart = locationWithoutPostal.substring(0, commaIndex).trim();
+      // Remove area in parentheses like "(South West)"
+      cityPart = cityPart.replace(/\s*\([^)]+\)\s*$/, '').trim();
+      result.city = cityPart;
+
+      // Everything after comma is province
+      result.province = locationWithoutPostal.substring(commaIndex + 1).trim();
+    }
+  }
+
+  return result;
+}
+
 function getActiveMlsNumbers() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LISTINGS_SHEET);
   const data = sheet.getDataRange().getValues();
