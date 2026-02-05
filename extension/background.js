@@ -162,94 +162,240 @@ async function fetchViaContentScript() {
       chrome.tabs.onUpdated.addListener(listener);
     });
 
-    // Give content script time to initialize
-    await new Promise(r => setTimeout(r, 2000));
+    // Give content script more time to initialize
+    await new Promise(r => setTimeout(r, 5000));
   }
 
-  // Send message to content script to fetch listings
-  return new Promise((resolve, reject) => {
-    chrome.tabs.sendMessage(tab.id, { action: 'fetchListings' }, async response => {
-      // Close tab if we created it
-      if (createdTab) {
-        try {
-          await chrome.tabs.remove(tab.id);
-          console.log('[RealtorTracker] Closed background tab');
-        } catch (e) {
-          // Tab might already be closed
-        }
-      }
+  // Try sending message with retries
+  const maxRetries = 3;
+  let lastError = null;
 
-      if (chrome.runtime.lastError) {
-        console.error('[RealtorTracker] Error sending message:', chrome.runtime.lastError);
-        reject(new Error('Could not connect to realtor.ca. Please click Capture Session.'));
-        return;
-      }
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`[RealtorTracker] Sending message to content script (attempt ${attempt}/${maxRetries})...`);
+
+      const response = await new Promise((resolve, reject) => {
+        chrome.tabs.sendMessage(tab.id, { action: 'fetchListings' }, response => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message || 'Connection failed'));
+            return;
+          }
+          resolve(response);
+        });
+      });
 
       if (!response) {
-        reject(new Error('No response from content script. Try Capture Session.'));
-        return;
+        throw new Error('No response from content script');
       }
 
       if (response.success) {
-        resolve(response.listings);
+        // Close tab after successful fetch
+        if (createdTab) {
+          try {
+            await chrome.tabs.remove(tab.id);
+            console.log('[RealtorTracker] Closed background tab');
+          } catch (e) {
+            // Tab might already be closed
+          }
+        }
+        return response.listings;
       } else {
-        reject(new Error(response.error || 'Failed to fetch listings'));
+        throw new Error(response.error || 'Failed to fetch listings');
       }
-    });
-  });
-}
+    } catch (error) {
+      lastError = error;
+      console.log(`[RealtorTracker] Attempt ${attempt} failed:`, error.message);
 
-async function syncToSheets(listings) {
-  const batchSize = 50;
-  let totalNew = 0, totalSold = 0;
+      if (attempt < maxRetries) {
+        // Wait before retry
+        await new Promise(r => setTimeout(r, 3000));
 
-  for (let i = 0; i < listings.length; i += batchSize) {
-    const batch = listings.slice(i, i + batchSize);
-    const isLastBatch = (i + batchSize) >= listings.length;
-    console.log(`[RealtorTracker] Syncing batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(listings.length/batchSize)}...`);
+        // Attempt to recover: Reload the tab or open a new one
+        try {
+          await chrome.tabs.get(tab.id);
+          console.log('[RealtorTracker] Reloading tab to fix connection/session...');
 
-    const payload = {
-      action: 'syncBatch',
-      listings: batch,
-      isLastBatch: isLastBatch,
-      totalListings: listings.length
-    };
+          await chrome.tabs.reload(tab.id);
 
-    // Use POST to avoid URL length limits
-    const response = await fetch(CONFIG.SCRIPT_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-      redirect: 'follow',
-      credentials: 'omit'
-    });
+          // Wait for reload to complete
+          await new Promise(resolve => {
+            const listener = (tabId, info) => {
+              if (tabId === tab.id && info.status === 'complete') {
+                chrome.tabs.onUpdated.removeListener(listener);
+                resolve();
+              }
+            };
+            chrome.tabs.onUpdated.addListener(listener);
+            // Fallback timeout 15s
+            setTimeout(() => {
+              chrome.tabs.onUpdated.removeListener(listener);
+              resolve();
+            }, 15000);
+          });
 
-    const text = await response.text();
-    let result;
-    try {
-      result = JSON.parse(text);
-    } catch (e) {
-      console.error('[RealtorTracker] Invalid response:', text.substring(0, 500));
-      // Check common issues
-      if (text.includes('<!DOCTYPE') || text.includes('<html')) {
-        throw new Error('Google Sheets returned HTML - script may need reauthorization. Redeploy the Apps Script.');
+          // Give content script time to init
+          await new Promise(r => setTimeout(r, 5000));
+
+        } catch (e) {
+          console.log('[RealtorTracker] Tab was closed, reopening...');
+          tab = await chrome.tabs.create({ url: 'https://www.realtor.ca/map', active: false });
+          createdTab = true;
+
+          await new Promise(resolve => {
+            const listener = (tabId, info) => {
+              if (tabId === tab.id && info.status === 'complete') {
+                chrome.tabs.onUpdated.removeListener(listener);
+                resolve();
+              }
+            };
+            chrome.tabs.onUpdated.addListener(listener);
+          });
+
+          await new Promise(r => setTimeout(r, 5000));
+        }
       }
-      if (text.includes('Authorization')) {
-        throw new Error('Google Sheets authorization error. Redeploy the Apps Script.');
-      }
-      throw new Error('Invalid response from Google Sheets: ' + text.substring(0, 100));
     }
-
-    if (result.error) throw new Error(result.error);
-    totalNew += result.newListings || 0;
-    totalSold += result.soldListings || 0;
-
-    await new Promise(r => setTimeout(r, 1000));
   }
 
-  return { success: true, newListings: totalNew, soldListings: totalSold, totalActive: listings.length };
+  // All retries failed, close tab if we created it
+  if (createdTab) {
+    try {
+      await chrome.tabs.remove(tab.id);
+    } catch (e) { }
+  }
+
+  throw new Error(lastError?.message || 'Could not connect to realtor.ca. Please click Capture Session.');
+}
+
+async function syncToSheets(currentListings) {
+  try {
+    // 1. Get Active IDs from Server to determine what to send
+    console.log('[RealtorTracker] Fetching existing active MLS numbers from Sheets...');
+
+    let activeMlsSet = null;
+
+    try {
+      const serverCheck = await fetch(`${CONFIG.SCRIPT_URL}?action=getActiveMlsNumbers`);
+      if (serverCheck.ok) {
+        const serverCheckText = await serverCheck.text();
+        // Safety check for HTML response (auth error or generic error page)
+        if (!serverCheckText.includes('<!DOCTYPE') && !serverCheckText.includes('<html')) {
+          const responseJson = JSON.parse(serverCheckText);
+          if (responseJson.mlsNumbers) {
+            activeMlsSet = new Set(responseJson.mlsNumbers);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[RealtorTracker] Smart Sync unavailable (Script not updated?), falling back to full sync.', e);
+    }
+
+    // 2. Compute Deltas
+    const currentMap = new Map();
+    currentListings.forEach(l => currentMap.set(String(l.mlsNumber), l));
+
+    const toInsert = [];
+    const toTouch = []; // IDs to update 'Active' timestamp
+    const toMarkSold = []; // IDs to update to 'Sold'
+
+    if (activeMlsSet) {
+      // Smart Sync Logic
+      const currentMlsSet = new Set(currentMap.keys());
+
+      // Identify New & Touched
+      for (const [mls, listing] of currentMap) {
+        if (activeMlsSet.has(mls)) {
+          toTouch.push(mls);
+        } else {
+          toInsert.push(listing);
+        }
+      }
+
+      // Identify Sold (In server active set, but not in current fetch)
+      for (const mls of activeMlsSet) {
+        if (!currentMlsSet.has(mls)) {
+          toMarkSold.push(mls);
+        }
+      }
+      console.log(`[RealtorTracker] Smart Sync Analysis:
+        - New Listings (to insert): ${toInsert.length}
+        - Still Active (to touch): ${toTouch.length}
+        - Sold/Removed (to mark): ${toMarkSold.length}`);
+    } else {
+      // Fallback: Treat everything as "toInsert" (New/Update)
+      // The server-side 'syncBatch' handles existing items by updating them, so this is safe.
+      // We won't be able to mark items as Sold efficiently here without the active set,
+      // but syncBatch marks items sold on the 'isLastBatch' call based on logic there?
+      // Wait, syncBatch only marks sold if we send EVERYTHING?
+      // Yes, syncBatch logic: "Find listings not seen today (not in the current sync)".
+      // So if we send all current listings, it works perfectly.
+      console.log('[RealtorTracker] Performing full sync (Smart Sync skipped)...');
+      currentListings.forEach(l => toInsert.push(l));
+    }
+
+    // 3. Send Bulk Status Update (Touch + Sold)
+    if (toTouch.length > 0 || toMarkSold.length > 0) {
+      console.log('[RealtorTracker] Sending bulk status update...');
+      const statusPayload = {
+        action: 'syncStatus',
+        activeIds: toTouch,
+        soldIds: toMarkSold,
+        totalActive: currentListings.length
+      };
+
+      const statusResp = await fetch(CONFIG.SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(statusPayload),
+        redirect: 'follow', credentials: 'omit'
+      });
+
+      if (!statusResp.ok) throw new Error('Failed to update status');
+    }
+
+    // 4. Send New Listings (Batched)
+    if (toInsert.length > 0) {
+      const batchSize = 50;
+      console.log(`[RealtorTracker] inserting ${toInsert.length} new listings...`);
+
+      for (let i = 0; i < toInsert.length; i += batchSize) {
+        chrome.alarms.create('keepAlive', { when: Date.now() + 30000 });
+
+        const batch = toInsert.slice(i, i + batchSize);
+        const isLastBatch = (i + batchSize) >= toInsert.length;
+        const batchLabel = `${Math.floor(i / batchSize) + 1}/${Math.ceil(toInsert.length / batchSize)}`;
+
+        console.log(`[RealtorTracker] Syncing new batch ${batchLabel}...`);
+
+        // We use syncBatch for inserts. Note: isLastBatch param used to trigger daily stats update
+        // We should set isLastBatch=true only on the very last op.
+        // Actually syncStatus already updated stats. But we have new listings now.
+        // syncBatch adds new listings and updates stats. 
+
+        const payload = {
+          action: 'syncBatch',
+          listings: batch,
+          isLastBatch: isLastBatch,
+          totalListings: currentListings.length
+        };
+
+        await fetch(CONFIG.SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          credentials: 'omit'
+        });
+
+        await new Promise(r => setTimeout(r, 500));
+      }
+    }
+
+    return { success: true, newListings: toInsert.length, soldListings: toMarkSold.length, totalActive: currentListings.length };
+
+  } catch (error) {
+    console.error('[RealtorTracker] Sync failed:', error);
+    return { success: false, error: error.message };
+  }
 }
 
 async function fetchAndUpdateListings() {

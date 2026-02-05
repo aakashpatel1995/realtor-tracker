@@ -38,7 +38,8 @@ const COL = {
   SQFT: 10,
   LOT_SIZE: 11,
   PROPERTY_TYPE: 12,
-  URL: 13
+  URL: 13,
+  LISTED_DATE: 14
 };
 
 function doGet(e) {
@@ -48,6 +49,8 @@ function doGet(e) {
     switch (action) {
       case 'getListings':
         return jsonResponse(getListings());
+      case 'getActiveMlsNumbers':
+        return jsonResponse(getActiveMlsNumbers());
       case 'getListingsByAge':
         return jsonResponse(getListingsByAge());
       case 'getStats':
@@ -76,6 +79,8 @@ function doPost(e) {
         return jsonResponse(syncListings(data.listings));
       case 'syncBatch':
         return jsonResponse(syncBatch(data.listings, data.isLastBatch, data.totalListings));
+      case 'syncStatus':
+        return jsonResponse(syncStatus(data.activeIds, data.soldIds, data.totalActive));
       case 'updateDailyStats':
         return jsonResponse(updateDailyStats(data.stats));
       default:
@@ -115,6 +120,7 @@ function getListings() {
         LotSize: row[COL.LOT_SIZE] || '',
         PropertyType: row[COL.PROPERTY_TYPE] || '',
         URL: row[COL.URL] || '',
+        Listed_Date: formatDate(row[COL.LISTED_DATE]) || '',
         rowIndex: i + 1
       });
     }
@@ -179,16 +185,19 @@ function getListingsByAge() {
   const day90 = daysAgo(90);
   const day365 = daysAgo(365);
 
-  // Filter active listings by age
+  // Helper to get listing date (prefer Listed_Date, fallback to First_Seen)
+  const getListingDate = (l) => l.Listed_Date || l.First_Seen;
+
+  // Filter active listings by age using actual listing date
   const activeListings = listings.filter(l => l.Status === 'active');
 
-  const olderThan7Days = activeListings.filter(l => l.First_Seen <= day7);
-  const olderThan30Days = activeListings.filter(l => l.First_Seen <= day30);
-  const olderThan90Days = activeListings.filter(l => l.First_Seen <= day90);
-  const olderThan1Year = activeListings.filter(l => l.First_Seen <= day365);
+  const olderThan7Days = activeListings.filter(l => getListingDate(l) && getListingDate(l) <= day7);
+  const olderThan30Days = activeListings.filter(l => getListingDate(l) && getListingDate(l) <= day30);
+  const olderThan90Days = activeListings.filter(l => getListingDate(l) && getListingDate(l) <= day90);
+  const olderThan1Year = activeListings.filter(l => getListingDate(l) && getListingDate(l) <= day365);
 
-  // Sort by first seen date (oldest first)
-  const sortByAge = (a, b) => a.First_Seen.localeCompare(b.First_Seen);
+  // Sort by listing date (oldest first)
+  const sortByAge = (a, b) => getListingDate(a).localeCompare(getListingDate(b));
 
   return {
     olderThan7Days: olderThan7Days.sort(sortByAge),
@@ -243,11 +252,30 @@ function syncBatch(listings, isLastBatch, totalListings) {
   listings.forEach(listing => {
     if (existingMap.has(listing.mlsNumber)) {
       const existing = existingMap.get(listing.mlsNumber);
-      // Update Last_Seen and ensure active
+
+      // Update fields
+      sheet.getRange(existing.rowIndex, 2).setValue(listing.price);
+      sheet.getRange(existing.rowIndex, 3).setValue(listing.address);
+      sheet.getRange(existing.rowIndex, 4).setValue(listing.type);
+
       sheet.getRange(existing.rowIndex, 6).setValue(today);
       sheet.getRange(existing.rowIndex, 7).setValue('active');
+
+      // Update Details + Listed_Date (Cols 8-15)
+      const details = [[
+        listing.bedrooms || '',
+        listing.bathrooms || '',
+        listing.parking || '',
+        listing.sqft || '',
+        listing.lotSize || '',
+        listing.propertyType || '',
+        listing.url || '',
+        listing.postedDate || '' // Listed_Date
+      ]];
+      sheet.getRange(existing.rowIndex, 8, 1, 8).setValues(details);
+
     } else {
-      // New listing with all details
+      // New listing
       newRows.push([
         listing.mlsNumber,
         listing.price,
@@ -262,7 +290,8 @@ function syncBatch(listings, isLastBatch, totalListings) {
         listing.sqft || '',
         listing.lotSize || '',
         listing.propertyType || '',
-        listing.url || ''
+        listing.url || '',
+        listing.postedDate || '' // Listed_Date
       ]);
       newCount++;
     }
@@ -271,7 +300,7 @@ function syncBatch(listings, isLastBatch, totalListings) {
   // Add new rows
   if (newRows.length > 0) {
     const lastRow = sheet.getLastRow();
-    sheet.getRange(lastRow + 1, 1, newRows.length, 14).setValues(newRows);
+    sheet.getRange(lastRow + 1, 1, newRows.length, 15).setValues(newRows);
   }
 
   let soldCount = 0;
@@ -307,90 +336,7 @@ function syncBatch(listings, isLastBatch, totalListings) {
 }
 
 function syncListings(currentListings) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LISTINGS_SHEET);
-  const { listings: existingListings } = getListings();
-
-  const today = formatDate(new Date());
-  const existingMap = new Map();
-  existingListings.forEach(l => existingMap.set(l.MLS_Number, l));
-
-  const currentMlsNumbers = new Set(currentListings.map(l => l.mlsNumber));
-
-  let newCount = 0;
-  let soldCount = 0;
-  const updates = [];
-  const newRows = [];
-
-  // Find new listings and updates
-  currentListings.forEach(listing => {
-    if (existingMap.has(listing.mlsNumber)) {
-      const existing = existingMap.get(listing.mlsNumber);
-      // Update Last_Seen and reactivate if needed
-      updates.push({
-        rowIndex: existing.rowIndex,
-        lastSeen: today,
-        status: 'active'
-      });
-    } else {
-      // New listing with all details
-      newRows.push([
-        listing.mlsNumber,
-        listing.price,
-        listing.address,
-        listing.type,
-        today,
-        today,
-        'active',
-        listing.bedrooms || '',
-        listing.bathrooms || '',
-        listing.parking || '',
-        listing.sqft || '',
-        listing.lotSize || '',
-        listing.propertyType || '',
-        listing.url || ''
-      ]);
-      newCount++;
-    }
-  });
-
-  // Find sold/delisted listings
-  existingListings.forEach(listing => {
-    if (listing.Status === 'active' && !currentMlsNumbers.has(listing.MLS_Number)) {
-      updates.push({
-        rowIndex: listing.rowIndex,
-        lastSeen: today,
-        status: 'sold'
-      });
-      soldCount++;
-    }
-  });
-
-  // Apply updates
-  updates.forEach(update => {
-    sheet.getRange(update.rowIndex, 6).setValue(update.lastSeen); // Last_Seen
-    sheet.getRange(update.rowIndex, 7).setValue(update.status);   // Status
-  });
-
-  // Add new rows
-  if (newRows.length > 0) {
-    const lastRow = sheet.getLastRow();
-    sheet.getRange(lastRow + 1, 1, newRows.length, 14).setValues(newRows);
-  }
-
-  // Update daily stats
-  updateDailyStats({
-    date: today,
-    newListings: newCount,
-    soldCount: soldCount,
-    totalActive: currentListings.length
-  });
-
-  return {
-    success: true,
-    newListings: newCount,
-    soldListings: soldCount,
-    totalActive: currentListings.length
-  };
+  return syncBatch(currentListings, true, currentListings.length);
 }
 
 function updateDailyStats(stats) {
@@ -441,10 +387,10 @@ function testSetup() {
   if (!listingsSheet) {
     listingsSheet = ss.insertSheet(LISTINGS_SHEET);
   }
-  // Update headers to include all columns
-  listingsSheet.getRange(1, 1, 1, 14).setValues([[
+  // Update headers to include Listed_Date
+  listingsSheet.getRange(1, 1, 1, 15).setValues([[
     'MLS_Number', 'Price', 'Address', 'Type', 'First_Seen', 'Last_Seen', 'Status',
-    'Bedrooms', 'Bathrooms', 'Parking', 'Sqft', 'LotSize', 'PropertyType', 'URL'
+    'Bedrooms', 'Bathrooms', 'Parking', 'Sqft', 'LotSize', 'PropertyType', 'URL', 'Listed_Date'
   ]]);
   Logger.log('Updated Listings sheet headers');
 
@@ -459,4 +405,80 @@ function testSetup() {
   }
 
   Logger.log('Setup complete! You can now deploy as web app.');
+}
+
+function getActiveMlsNumbers() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LISTINGS_SHEET);
+  const data = sheet.getDataRange().getValues();
+  const activeMls = [];
+
+  // Skip header, assuming first row is header
+  for (let i = 1; i < data.length; i++) {
+    // Check if Status (index 6) is 'active'
+    if (data[i][6] === 'active') {
+      activeMls.push(String(data[i][0])); // MLS Number
+    }
+  }
+
+  return { mlsNumbers: activeMls };
+}
+
+function syncStatus(activeIds, soldIds, totalActive) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LISTINGS_SHEET);
+  const data = sheet.getDataRange().getValues();
+  const today = formatDate(new Date());
+
+  const activeSet = new Set((activeIds || []).map(String));
+  const soldSet = new Set((soldIds || []).map(String));
+
+  let updatesCount = 0;
+
+  // Iterate through all rows (skip header)
+  for (let i = 1; i < data.length; i++) {
+    const mls = String(data[i][0]);
+
+    if (activeSet.has(mls)) {
+      // Update Last_Seen (Col 6, index 5) and Status (Col 7, index 6)
+      if (data[i][5] !== today || data[i][6] !== 'active') {
+        data[i][5] = today;
+        data[i][6] = 'active';
+        updatesCount++;
+      }
+    } else if (soldSet.has(mls)) {
+      // Update Last_Seen and Mark as Sold
+      if (data[i][6] !== 'sold') {
+        data[i][5] = today;
+        data[i][6] = 'sold';
+        updatesCount++;
+      }
+    }
+  }
+
+  // Bulk write updates back to sheet if there were changes
+  if (updatesCount > 0) {
+    sheet.getRange(1, 1, data.length, data[0].length).setValues(data);
+  }
+
+  // Calculate newly added count (implied to be handled by syncBatch calls before this?)
+  // Actually syncStatus might run alone.
+  // We need to update stats.
+  // This function assumes new listings are already added or will be added separately.
+  // We only track active/sold counts here.
+
+  let currentActive = 0;
+  let currentSoldToday = 0;
+
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][6] === 'active') currentActive++;
+    if (data[i][6] === 'sold' && data[i][5] === today) currentSoldToday++;
+  }
+
+  updateDailyStats({
+    date: today,
+    newListings: 0, // This endpoint doesn't add new ones. syncBatch does.
+    soldCount: currentSoldToday,
+    totalActive: currentActive
+  });
+
+  return { success: true, updates: updatesCount };
 }

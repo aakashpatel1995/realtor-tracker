@@ -311,13 +311,14 @@ function renderListings() {
       <div class="col-address">Address</div>
       <div class="col-price">Price</div>
       <div class="col-details">Details</div>
+      <div class="col-listed">Listed</div>
       <div class="col-age">Days</div>
       <div class="col-action">Link</div>
     </div>
   `;
 
   listings.forEach(listing => {
-    const daysListed = getDaysListed(listing.First_Seen);
+    const daysListed = getDaysListed(listing);
     const price = formatPrice(listing.Price);
     const details = formatDetails(listing);
 
@@ -329,6 +330,9 @@ function renderListings() {
     }
     const hasUrl = listing.MLS_Number ? true : false;
 
+    const listedDate = listing.Listed_Date || listing.First_Seen || '';
+    const formattedDate = listedDate ? formatListedDate(listedDate) : 'N/A';
+
     html += `
       <div class="listing-row ${listing.Type}">
         <div class="col-mls">${listing.MLS_Number || 'N/A'}</div>
@@ -338,6 +342,7 @@ function renderListings() {
         </div>
         <div class="col-price">${price}</div>
         <div class="col-details">${details}</div>
+        <div class="col-listed">${formattedDate}</div>
         <div class="col-age">
           <span class="days-badge ${getDaysClass(daysListed)}">${daysListed}</span>
         </div>
@@ -351,11 +356,13 @@ function renderListings() {
   container.innerHTML = html;
 }
 
-function getDaysListed(firstSeen) {
-  if (!firstSeen) return 0;
-  const first = new Date(firstSeen);
+function getDaysListed(listing) {
+  // Use Listed_Date if available, otherwise fall back to First_Seen
+  const dateStr = listing.Listed_Date || listing.First_Seen;
+  if (!dateStr) return 0;
+  const listDate = new Date(dateStr);
   const now = new Date();
-  return Math.floor((now - first) / (1000 * 60 * 60 * 24));
+  return Math.floor((now - listDate) / (1000 * 60 * 60 * 24));
 }
 
 function getDaysClass(days) {
@@ -386,4 +393,14 @@ function formatDetails(listing) {
   if (listing.LotSize) parts.push(`Lot: ${listing.LotSize}`);
 
   return parts.length > 0 ? parts.join(' · ') : 'Details N/A';
+}
+
+function formatListedDate(dateStr) {
+  if (!dateStr) return 'N/A';
+  const date = new Date(dateStr);
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  });
 }

@@ -53,10 +53,19 @@ async function fetchAllListings() {
         if (results.length === 0) {
           hasMore = false;
         } else {
+          // DEBUG: Log the first listing to check available fields
+          if (page === 1 && type === 'sale' && !window.hasLoggedListing) {
+            console.log('[RealtorTracker] First listing structure:', results[0]);
+            window.hasLoggedListing = true;
+          }
+
           results.forEach(listing => {
             const building = listing.Building || {};
             const property = listing.Property || {};
             const land = listing.Land || {};
+
+            // Try to find a date
+            const rawDate = listing.InsertedDateUTC || listing.Business?.InsertedDate || '';
 
             allListings.push({
               mlsNumber: listing.MlsNumber,
@@ -69,7 +78,8 @@ async function fetchAllListings() {
               sqft: building.SizeInterior || '',
               lotSize: land.SizeTotal || '',
               propertyType: property.Type || '',
-              url: `https://www.realtor.ca${listing.RelativeDetailsURL || ''}`
+              url: `https://www.realtor.ca${listing.RelativeDetailsURL || ''}`,
+              postedDate: parseRealtorDate(rawDate)
             });
           });
           page++;
@@ -77,6 +87,7 @@ async function fetchAllListings() {
         }
       } catch (e) {
         console.error(`[RealtorTracker] Error fetching ${type} page ${page}:`, e);
+        if (page === 1) throw e; // Propagate error on first page to trigger retry logic
         hasMore = false;
       }
     }
@@ -84,6 +95,16 @@ async function fetchAllListings() {
 
   console.log(`[RealtorTracker] Total: ${allListings.length} listings`);
   return allListings;
+}
+
+function parseRealtorDate(dateStr) {
+  if (!dateStr) return '';
+  // Handle /Date(1234567890)/ or /Date(1234567890-0400)/
+  const match = dateStr.match(/\/Date\((-?\d+)/);
+  if (match) {
+    return new Date(parseInt(match[1])).toISOString().split('T')[0];
+  }
+  return '';
 }
 
 // Listen for messages from background script

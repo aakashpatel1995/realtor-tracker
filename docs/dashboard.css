@@ -553,7 +553,7 @@ footer {
 
 .listings-header {
   display: grid;
-  grid-template-columns: 100px 2fr 100px 1.5fr 60px 70px;
+  grid-template-columns: 100px 2fr 100px 1.5fr 90px 50px 70px;
   padding: 16px 24px;
   background: var(--gray-100);
   font-weight: 600;
@@ -566,13 +566,18 @@ footer {
 
 .listing-row {
   display: grid;
-  grid-template-columns: 100px 2fr 100px 1.5fr 60px 70px;
+  grid-template-columns: 100px 2fr 100px 1.5fr 90px 50px 70px;
   padding: 16px 24px;
   border-bottom: 1px solid var(--gray-200);
   text-decoration: none;
   color: inherit;
   transition: background 0.2s;
   align-items: center;
+}
+
+.col-listed {
+  font-size: 0.85rem;
+  color: var(--gray-600);
 }
 
 .listing-row:hover {
