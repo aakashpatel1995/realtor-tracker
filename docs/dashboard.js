@@ -344,8 +344,9 @@ function populateCityFilter(data) {
   ];
 
   allListings.forEach(listing => {
-    if (listing.City) {
-      cities.add(listing.City);
+    const city = listing.City || listing.city;
+    if (city) {
+      cities.add(city);
     }
   });
 
@@ -394,13 +395,13 @@ function renderListings() {
 
   // Apply city filter
   if (currentCityFilter) {
-    listings = listings.filter(l => l.City === currentCityFilter);
+    listings = listings.filter(l => (l.City || l.city) === currentCityFilter);
   }
 
   // Apply postal code filter
   if (currentPostalFilter) {
     listings = listings.filter(l => {
-      const postal = (l.PostalCode || '').toUpperCase().replace(/\s/g, '');
+      const postal = (l.PostalCode || l.postalCode || '').toUpperCase().replace(/\s/g, '');
       return postal.startsWith(currentPostalFilter);
     });
   }
@@ -449,8 +450,8 @@ function renderListings() {
           <div class="listing-address">${listing.Address || 'N/A'}</div>
           <div class="listing-meta">
             <span class="listing-type">${listing.PropertyType || listing.Type}</span>
-            ${listing.City ? `<span class="listing-city">${listing.City}</span>` : ''}
-            ${listing.PostalCode ? `<span class="listing-postal">${listing.PostalCode}</span>` : ''}
+            ${(listing.City || listing.city) ? `<span class="listing-city">${listing.City || listing.city}</span>` : ''}
+            ${(listing.PostalCode || listing.postalCode) ? `<span class="listing-postal">${listing.PostalCode || listing.postalCode}</span>` : ''}
           </div>
         </div>
         <div class="col-price">${price}</div>
@@ -557,18 +558,25 @@ function sortListings(listings, sortBy) {
     case 'city':
       // City A-Z
       sorted.sort((a, b) => {
-        const cityA = (a.City || '').toLowerCase();
-        const cityB = (b.City || '').toLowerCase();
+        const cityA = (a.City || a.city || '').toLowerCase();
+        const cityB = (b.City || b.city || '').toLowerCase();
+        if (!cityA && !cityB) return 0;
+        if (!cityA) return 1;
+        if (!cityB) return -1;
         return cityA.localeCompare(cityB);
       });
       break;
     case 'postal':
-      // Postal code
+      // Postal code - sort by FSA (first 3 chars) then full code
       sorted.sort((a, b) => {
-        const postalA = (a.PostalCode || '').toUpperCase();
-        const postalB = (b.PostalCode || '').toUpperCase();
+        const postalA = (a.PostalCode || a.postalCode || '').toUpperCase();
+        const postalB = (b.PostalCode || b.postalCode || '').toUpperCase();
+        if (!postalA && !postalB) return 0;
+        if (!postalA) return 1;
+        if (!postalB) return -1;
         return postalA.localeCompare(postalB);
       });
+      console.log('[Dashboard] Sorted by postal, first 3:', sorted.slice(0, 3).map(l => l.PostalCode || l.postalCode));
       break;
   }
 
