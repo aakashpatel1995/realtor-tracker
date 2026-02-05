@@ -343,12 +343,20 @@ function populateCityFilter(data) {
     ...(data.olderThan1Year || [])
   ];
 
+  console.log('[Dashboard] Total listings for city filter:', allListings.length);
+  if (allListings.length > 0) {
+    console.log('[Dashboard] Sample listing fields:', Object.keys(allListings[0]));
+    console.log('[Dashboard] Sample listing City value:', allListings[0].City, '| city:', allListings[0].city);
+  }
+
   allListings.forEach(listing => {
     const city = listing.City || listing.city;
     if (city) {
       cities.add(city);
     }
   });
+
+  console.log('[Dashboard] Found cities:', Array.from(cities));
 
   // Sort cities alphabetically
   const sortedCities = Array.from(cities).sort();
