@@ -272,6 +272,10 @@ function setupAgeTabs() {
 }
 
 function updateListingsByAge(data) {
+  console.log('[Dashboard] Listings by age data:', data);
+  console.log('[Dashboard] Counts:', data.counts);
+  console.log('[Dashboard] 7 days sample:', data.olderThan7Days?.slice(0, 2));
+
   listingsData = data;
 
   // Update counts
