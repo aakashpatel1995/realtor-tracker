@@ -320,8 +320,14 @@ function renderListings() {
     const daysListed = getDaysListed(listing.First_Seen);
     const price = formatPrice(listing.Price);
     const details = formatDetails(listing);
-    const url = listing.URL || '#';
-    const hasUrl = listing.URL && listing.URL !== '#' && listing.URL.includes('realtor.ca');
+
+    // Generate URL from MLS number if not available
+    let url = listing.URL;
+    if (!url || url === '#' || !url.includes('realtor.ca')) {
+      // Realtor.ca search URL by MLS number
+      url = `https://www.realtor.ca/map#ZoomLevel=11&Center=43.7,-79.4&LatitudeMax=44.0&LongitudeMax=-78.9&LatitudeMin=43.4&LongitudeMin=-80.0&view=list&Sort=6-D&PropertySearchTypeId=1&TransactionTypeId=2&MlsNumber=${listing.MLS_Number}`;
+    }
+    const hasUrl = listing.MLS_Number ? true : false;
 
     html += `
       <div class="listing-row ${listing.Type}">
