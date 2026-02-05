@@ -128,7 +128,7 @@ const ONTARIO_CITIES = [
   'Prince Edward County, ON',
 ];
 
-async function fetchRealtorListings(transactionType = 'sale', page = 1, cityName = null) {
+async function fetchRealtorListings(transactionType = 'sale', page = 1, cityName = null, retryAttempt = 0) {
   const transactionTypeId = transactionType === 'sale' ? 2 : 3;
   const params = new URLSearchParams({
     CultureId: '1',
@@ -145,23 +145,37 @@ async function fetchRealtorListings(transactionType = 'sale', page = 1, cityName
     params.append('LocationSearchString', cityName);
   }
 
-  const response = await fetch('https://api2.realtor.ca/Listing.svc/PropertySearch_Post', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Accept': 'application/json'
-    },
-    body: params.toString(),
-    credentials: 'include'
-  });
+  try {
+    const response = await fetch('https://api2.realtor.ca/Listing.svc/PropertySearch_Post', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': '*/*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Origin': 'https://www.realtor.ca',
+        'Referer': 'https://www.realtor.ca/'
+      },
+      body: params.toString(),
+      credentials: 'include',
+      mode: 'cors'
+    });
 
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const data = await response.json();
-  return {
-    results: data.Results || [],
-    totalRecords: data.Paging?.TotalRecords || 0,
-    totalPages: data.Paging?.TotalPages || 0
-  };
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    return {
+      results: data.Results || [],
+      totalRecords: data.Paging?.TotalRecords || 0,
+      totalPages: data.Paging?.TotalPages || 0
+    };
+  } catch (error) {
+    // Retry up to 2 times with delay
+    if (retryAttempt < 2) {
+      console.log(`[RealtorTracker] Fetch failed, retrying in 3s (attempt ${retryAttempt + 1}/2)...`);
+      await new Promise(r => setTimeout(r, 3000));
+      return fetchRealtorListings(transactionType, page, cityName, retryAttempt + 1);
+    }
+    throw error;
+  }
 }
 
 // Send progress update to background script
