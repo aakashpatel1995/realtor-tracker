@@ -65,6 +65,9 @@ async function fetchAllListings() {
             console.log('PostalCode:', results[0].PostalCode);
             // Log all top-level keys to find date fields
             console.log('[RealtorTracker] All top-level keys:', Object.keys(results[0]));
+            // Test date parsing
+            const testDate = parseRealtorDate(results[0].InsertedDateUTC);
+            console.log('[RealtorTracker] Parsed InsertedDateUTC:', results[0].InsertedDateUTC, '→', testDate);
             window.hasLoggedListing = true;
           }
 
@@ -73,27 +76,9 @@ async function fetchAllListings() {
             const property = listing.Property || {};
             const land = listing.Land || {};
 
-            // Calculate listing date from TimeOnRealtor (days on market) or use InsertedDateUTC
-            let postedDate = '';
-
-            // Try TimeOnRealtor first (more reliable in search results)
-            const daysOnMarket = listing.TimeOnRealtor || property.TimeOnRealtor;
-            if (daysOnMarket) {
-              // Parse "X days" or just number
-              const daysMatch = String(daysOnMarket).match(/(\d+)/);
-              if (daysMatch) {
-                const days = parseInt(daysMatch[1]);
-                const listDate = new Date();
-                listDate.setDate(listDate.getDate() - days);
-                postedDate = listDate.toISOString().split('T')[0];
-              }
-            }
-
-            // Fallback to InsertedDateUTC if available
-            if (!postedDate) {
-              const rawDate = listing.InsertedDateUTC || listing.Business?.InsertedDate || '';
-              postedDate = parseRealtorDate(rawDate);
-            }
+            // Get listing date from InsertedDateUTC (.NET ticks format)
+            const rawDate = listing.InsertedDateUTC || '';
+            const postedDate = parseRealtorDate(rawDate);
 
             allListings.push({
               mlsNumber: listing.MlsNumber,
@@ -127,11 +112,27 @@ async function fetchAllListings() {
 
 function parseRealtorDate(dateStr) {
   if (!dateStr) return '';
-  // Handle /Date(1234567890)/ or /Date(1234567890-0400)/
-  const match = dateStr.match(/\/Date\((-?\d+)/);
+
+  // Handle .NET ticks format (large number like 638424016691530000)
+  // .NET ticks are 100-nanosecond intervals since January 1, 0001
+  // Convert to JavaScript timestamp (milliseconds since January 1, 1970)
+  if (/^\d{17,}$/.test(String(dateStr))) {
+    const ticks = BigInt(dateStr);
+    const ticksToUnixEpoch = BigInt('621355968000000000'); // Ticks from year 1 to 1970
+    const ticksSinceUnix = ticks - ticksToUnixEpoch;
+    const milliseconds = Number(ticksSinceUnix / BigInt(10000));
+    const date = new Date(milliseconds);
+    if (!isNaN(date.getTime())) {
+      return date.toISOString().split('T')[0];
+    }
+  }
+
+  // Handle /Date(1234567890)/ or /Date(1234567890-0400)/ format
+  const match = String(dateStr).match(/\/Date\((-?\d+)/);
   if (match) {
     return new Date(parseInt(match[1])).toISOString().split('T')[0];
   }
+
   return '';
 }
 
