@@ -56,6 +56,12 @@ async function fetchAllListings() {
           // DEBUG: Log the first listing to check available fields
           if (page === 1 && type === 'sale' && !window.hasLoggedListing) {
             console.log('[RealtorTracker] First listing structure:', results[0]);
+            console.log('[RealtorTracker] Date fields check:', {
+              InsertedDateUTC: results[0].InsertedDateUTC,
+              TimeOnRealtor: results[0].TimeOnRealtor,
+              Property_TimeOnRealtor: results[0].Property?.TimeOnRealtor,
+              ListedOn: results[0].ListedOn
+            });
             window.hasLoggedListing = true;
           }
 
@@ -64,8 +70,27 @@ async function fetchAllListings() {
             const property = listing.Property || {};
             const land = listing.Land || {};
 
-            // Try to find a date
-            const rawDate = listing.InsertedDateUTC || listing.Business?.InsertedDate || '';
+            // Calculate listing date from TimeOnRealtor (days on market) or use InsertedDateUTC
+            let postedDate = '';
+
+            // Try TimeOnRealtor first (more reliable in search results)
+            const daysOnMarket = listing.TimeOnRealtor || property.TimeOnRealtor;
+            if (daysOnMarket) {
+              // Parse "X days" or just number
+              const daysMatch = String(daysOnMarket).match(/(\d+)/);
+              if (daysMatch) {
+                const days = parseInt(daysMatch[1]);
+                const listDate = new Date();
+                listDate.setDate(listDate.getDate() - days);
+                postedDate = listDate.toISOString().split('T')[0];
+              }
+            }
+
+            // Fallback to InsertedDateUTC if available
+            if (!postedDate) {
+              const rawDate = listing.InsertedDateUTC || listing.Business?.InsertedDate || '';
+              postedDate = parseRealtorDate(rawDate);
+            }
 
             allListings.push({
               mlsNumber: listing.MlsNumber,
@@ -79,7 +104,7 @@ async function fetchAllListings() {
               lotSize: land.SizeTotal || '',
               propertyType: property.Type || '',
               url: `https://www.realtor.ca${listing.RelativeDetailsURL || ''}`,
-              postedDate: parseRealtorDate(rawDate)
+              postedDate: postedDate
             });
           });
           page++;
