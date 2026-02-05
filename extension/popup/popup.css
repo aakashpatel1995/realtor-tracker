@@ -115,7 +115,32 @@ hr {
   text-align: center;
   font-size: 0.75rem;
   color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 8px;
+}
+
+.session-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.8);
   margin-bottom: 16px;
+}
+
+.indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.indicator.active {
+  background: #48bb78;
+  box-shadow: 0 0 6px #48bb78;
+}
+
+.indicator.inactive {
+  background: #f56565;
 }
 
 .error {
@@ -172,6 +197,16 @@ hr {
   background: rgba(255, 255, 255, 0.3);
 }
 
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-small {
+  padding: 8px 12px;
+  font-size: 0.8rem;
+}
+
 .spinner {
   width: 16px;
   height: 16px;
@@ -179,6 +214,11 @@ hr {
   border-top-color: transparent;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
+}
+
+.btn-secondary .spinner {
+  border-color: white;
+  border-top-color: transparent;
 }
 
 @keyframes spin {

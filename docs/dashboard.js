@@ -6,11 +6,14 @@ const CONFIG = {
 };
 
 let autoRefreshTimer = null;
+let listingsData = null;
+let currentAgeFilter = '7';
 
 // Initialize dashboard
 document.addEventListener('DOMContentLoaded', () => {
   loadConfigFromStorage();
   setupEventListeners();
+  setupAgeTabs();
 });
 
 function loadConfigFromStorage() {
@@ -98,14 +101,16 @@ async function loadAllData() {
   try {
     setLoading(true);
 
-    const [stats, dailyStats] = await Promise.all([
+    const [stats, dailyStats, listings] = await Promise.all([
       sheetsApi('getStats'),
-      sheetsApi('getDailyStats')
+      sheetsApi('getDailyStats'),
+      sheetsApi('getListingsByAge')
     ]);
 
     updateStats(stats);
     updateBreakdown(stats);
     updateHistory(dailyStats.stats || []);
+    updateListingsByAge(listings);
     updateLastUpdated();
 
   } catch (error) {
@@ -253,4 +258,119 @@ function showToast(message, type = '') {
   setTimeout(() => {
     toast.classList.add('hidden');
   }, 3000);
+}
+
+function setupAgeTabs() {
+  document.querySelectorAll('.age-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.age-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      currentAgeFilter = tab.dataset.age;
+      renderListings();
+    });
+  });
+}
+
+function updateListingsByAge(data) {
+  listingsData = data;
+
+  // Update counts
+  document.getElementById('count7').textContent = data.counts?.day7 || 0;
+  document.getElementById('count30').textContent = data.counts?.day30 || 0;
+  document.getElementById('count90').textContent = data.counts?.day90 || 0;
+  document.getElementById('count365').textContent = data.counts?.year || 0;
+
+  renderListings();
+}
+
+function renderListings() {
+  const container = document.getElementById('listingsContainer');
+
+  if (!listingsData) {
+    container.innerHTML = '<div class="listings-loading">Loading listings...</div>';
+    return;
+  }
+
+  let listings;
+  switch (currentAgeFilter) {
+    case '7': listings = listingsData.olderThan7Days; break;
+    case '30': listings = listingsData.olderThan30Days; break;
+    case '90': listings = listingsData.olderThan90Days; break;
+    case '365': listings = listingsData.olderThan1Year; break;
+    default: listings = [];
+  }
+
+  if (!listings || listings.length === 0) {
+    container.innerHTML = '<div class="listings-empty">No listings found in this category</div>';
+    return;
+  }
+
+  let html = `
+    <div class="listings-header">
+      <div class="col-address">Address</div>
+      <div class="col-price">Price</div>
+      <div class="col-details">Details</div>
+      <div class="col-age">Days Listed</div>
+    </div>
+  `;
+
+  listings.forEach(listing => {
+    const daysListed = getDaysListed(listing.First_Seen);
+    const price = formatPrice(listing.Price);
+    const details = formatDetails(listing);
+    const url = listing.URL || '#';
+
+    html += `
+      <a href="${url}" target="_blank" class="listing-row ${listing.Type}">
+        <div class="col-address">
+          <div class="listing-address">${listing.Address || 'N/A'}</div>
+          <div class="listing-type">${listing.PropertyType || listing.Type}</div>
+        </div>
+        <div class="col-price">${price}</div>
+        <div class="col-details">${details}</div>
+        <div class="col-age">
+          <span class="days-badge ${getDaysClass(daysListed)}">${daysListed} days</span>
+        </div>
+      </a>
+    `;
+  });
+
+  container.innerHTML = html;
+}
+
+function getDaysListed(firstSeen) {
+  if (!firstSeen) return 0;
+  const first = new Date(firstSeen);
+  const now = new Date();
+  return Math.floor((now - first) / (1000 * 60 * 60 * 24));
+}
+
+function getDaysClass(days) {
+  if (days >= 365) return 'days-year';
+  if (days >= 90) return 'days-90';
+  if (days >= 30) return 'days-30';
+  return 'days-7';
+}
+
+function formatPrice(price) {
+  if (!price) return 'N/A';
+  if (typeof price === 'string') {
+    price = parseInt(price.replace(/[^0-9]/g, ''));
+  }
+  if (price >= 1000000) {
+    return '$' + (price / 1000000).toFixed(2) + 'M';
+  }
+  return '$' + price.toLocaleString();
+}
+
+function formatDetails(listing) {
+  const parts = [];
+
+  if (listing.Bedrooms) parts.push(`${listing.Bedrooms} bed`);
+  if (listing.Bathrooms) parts.push(`${listing.Bathrooms} bath`);
+  if (listing.Parking) parts.push(`${listing.Parking} park`);
+  if (listing.Sqft) parts.push(listing.Sqft);
+  if (listing.LotSize) parts.push(`Lot: ${listing.LotSize}`);
+
+  return parts.length > 0 ? parts.join(' · ') : 'Details N/A';
 }

@@ -7,6 +7,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   const refreshBtn = document.getElementById('refreshBtn');
   const refreshText = document.getElementById('refreshText');
   const refreshSpinner = document.getElementById('refreshSpinner');
+  const captureBtn = document.getElementById('captureBtn');
+  const captureText = document.getElementById('captureText');
+  const captureSpinner = document.getElementById('captureSpinner');
+  const sessionIndicator = document.getElementById('sessionIndicator');
+  const sessionText = document.getElementById('sessionText');
   const errorMessage = document.getElementById('error-message');
 
   // Load existing config
@@ -19,6 +24,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!config.scriptUrl) {
       configSection.classList.remove('hidden');
     }
+
+    // Update session status
+    updateSessionStatus(config.sessionCaptured, config.sessionCapturedAt);
   });
 
   // Load stats
@@ -64,30 +72,108 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       if (result.success) {
         loadStats();
+        // Refresh session status
+        chrome.runtime.sendMessage({ action: 'getConfig' }, (config) => {
+          updateSessionStatus(config.sessionCaptured, config.sessionCapturedAt);
+        });
       } else {
         showError(result.error || 'Failed to refresh');
       }
     });
   });
 
-  function loadStats() {
-    chrome.runtime.sendMessage({ action: 'getStats' }, (stats) => {
+  // Capture session
+  captureBtn.addEventListener('click', async () => {
+    captureBtn.disabled = true;
+    captureText.textContent = 'Capturing...';
+    captureSpinner.classList.remove('hidden');
+    hideError();
+
+    chrome.runtime.sendMessage({ action: 'captureSession' }, (result) => {
+      captureBtn.disabled = false;
+      captureText.textContent = 'Capture Session';
+      captureSpinner.classList.add('hidden');
+
+      if (result.success) {
+        updateSessionStatus(true, new Date().toISOString());
+        // Show success briefly
+        sessionText.textContent = `Captured ${result.cookieCount} cookies!`;
+        setTimeout(() => {
+          chrome.runtime.sendMessage({ action: 'getConfig' }, (config) => {
+            updateSessionStatus(config.sessionCaptured, config.sessionCapturedAt);
+          });
+        }, 2000);
+      } else {
+        showError(result.error || 'Failed to capture session');
+      }
+    });
+  });
+
+  function updateSessionStatus(captured, capturedAt) {
+    if (captured && capturedAt) {
+      sessionIndicator.classList.remove('inactive');
+      sessionIndicator.classList.add('active');
+      const date = new Date(capturedAt);
+      const timeAgo = formatTimeAgo(date);
+      sessionText.textContent = `Session active (${timeAgo})`;
+    } else {
+      sessionIndicator.classList.remove('active');
+      sessionIndicator.classList.add('inactive');
+      sessionText.textContent = 'No session - click Capture';
+    }
+  }
+
+  function formatTimeAgo(date) {
+    const now = new Date();
+    const diff = now - date;
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(hours / 24);
+
+    if (days > 0) return `${days}d ago`;
+    if (hours > 0) return `${hours}h ago`;
+    return 'just now';
+  }
+
+  function loadStats(forceRefresh = false) {
+    chrome.runtime.sendMessage({ action: 'getStats', forceRefresh }, (stats) => {
+      console.log('[RealtorTracker] Stats received:', stats);
+
+      if (!stats) {
+        showError('No response from background script');
+        return;
+      }
+
       if (stats.error) {
         showError(stats.error);
         return;
       }
 
-      document.getElementById('newToday').textContent = formatNumber(stats.newToday);
-      document.getElementById('newLast7Days').textContent = formatNumber(stats.newLast7Days);
-      document.getElementById('newLast7Weeks').textContent = formatNumber(stats.newLast7Weeks);
-      document.getElementById('soldToday').textContent = formatNumber(stats.soldToday);
-      document.getElementById('totalActive').textContent = formatNumber(stats.totalActive);
+      displayStats(stats);
 
-      if (stats.lastUpdate) {
-        const date = new Date(stats.lastUpdate);
-        document.getElementById('lastUpdate').textContent = formatDateTime(date);
+      // If we got cached data, refresh in background
+      if (stats.fromCache && !forceRefresh) {
+        console.log('[RealtorTracker] Got cached data, refreshing in background...');
+        chrome.runtime.sendMessage({ action: 'getStats', forceRefresh: true }, (freshStats) => {
+          if (freshStats && !freshStats.error) {
+            console.log('[RealtorTracker] Fresh stats received');
+            displayStats(freshStats);
+          }
+        });
       }
     });
+  }
+
+  function displayStats(stats) {
+    document.getElementById('newToday').textContent = formatNumber(stats.newToday);
+    document.getElementById('newLast7Days').textContent = formatNumber(stats.newLast7Days);
+    document.getElementById('newLast7Weeks').textContent = formatNumber(stats.newLast7Weeks);
+    document.getElementById('soldToday').textContent = formatNumber(stats.soldToday);
+    document.getElementById('totalActive').textContent = formatNumber(stats.totalActive);
+
+    if (stats.lastUpdate) {
+      const date = new Date(stats.lastUpdate);
+      document.getElementById('lastUpdate').textContent = formatDateTime(date);
+    }
   }
 
   function formatNumber(num) {
@@ -113,7 +199,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function showError(message) {
-    errorMessage.textContent = message;
+    // Check if it's a connection error that needs realtor.ca to be open
+    if (message.includes('realtor.ca') || message.includes('content script')) {
+      errorMessage.innerHTML = `
+        ${message}<br><br>
+        <a href="https://www.realtor.ca/map" target="_blank" style="color: #667eea;">
+          Click here to open realtor.ca
+        </a>, then try again.
+      `;
+    } else {
+      errorMessage.textContent = message;
+    }
     errorMessage.classList.remove('hidden');
   }
 

@@ -1,19 +1,32 @@
 {
   "manifest_version": 3,
   "name": "Realtor.ca Listing Tracker",
-  "version": "1.0.0",
+  "version": "1.5.0",
   "description": "Track real estate listings in the Greater Toronto Area from realtor.ca",
   "permissions": [
     "storage",
-    "alarms"
+    "alarms",
+    "tabs",
+    "scripting",
+    "cookies"
   ],
   "host_permissions": [
     "https://api2.realtor.ca/*",
-    "https://api.airtable.com/*"
+    "https://script.google.com/*",
+    "https://script.googleusercontent.com/*",
+    "https://www.realtor.ca/*",
+    "https://*.googleusercontent.com/*"
   ],
   "background": {
     "service_worker": "background.js"
   },
+  "content_scripts": [
+    {
+      "matches": ["https://www.realtor.ca/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
   "action": {
     "default_popup": "popup/popup.html",
     "default_icon": {

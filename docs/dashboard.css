@@ -486,6 +486,169 @@ footer {
   display: none !important;
 }
 
+/* Listings by Age Section */
+.listings-section {
+  margin-bottom: 40px;
+}
+
+.age-tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.age-tab {
+  padding: 12px 20px;
+  border: none;
+  border-radius: 8px;
+  background: white;
+  color: var(--gray-600);
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.age-tab span {
+  background: var(--gray-200);
+  color: var(--gray-600);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.85rem;
+}
+
+.age-tab:hover {
+  background: var(--gray-100);
+}
+
+.age-tab.active {
+  background: var(--primary);
+  color: white;
+}
+
+.age-tab.active span {
+  background: rgba(255, 255, 255, 0.3);
+  color: white;
+}
+
+.listings-container {
+  background: white;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.listings-loading,
+.listings-empty {
+  padding: 40px;
+  text-align: center;
+  color: var(--gray-500);
+}
+
+.listings-header {
+  display: grid;
+  grid-template-columns: 2fr 1fr 2fr 100px;
+  padding: 16px 24px;
+  background: var(--gray-100);
+  font-weight: 600;
+  color: var(--gray-600);
+  font-size: 0.85rem;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.listing-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 2fr 100px;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--gray-200);
+  text-decoration: none;
+  color: inherit;
+  transition: background 0.2s;
+}
+
+.listing-row:hover {
+  background: var(--gray-50);
+}
+
+.listing-row:last-child {
+  border-bottom: none;
+}
+
+.listing-row.sale {
+  border-left: 4px solid var(--primary);
+}
+
+.listing-row.rent {
+  border-left: 4px solid var(--secondary);
+}
+
+.listing-address {
+  font-weight: 500;
+  color: var(--gray-800);
+  margin-bottom: 4px;
+}
+
+.listing-type {
+  font-size: 0.8rem;
+  color: var(--gray-500);
+  text-transform: capitalize;
+}
+
+.col-price {
+  font-weight: 600;
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+}
+
+.col-details {
+  font-size: 0.9rem;
+  color: var(--gray-600);
+  display: flex;
+  align-items: center;
+}
+
+.col-age {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.days-badge {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.days-7 {
+  background: #e6fffa;
+  color: #047857;
+}
+
+.days-30 {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.days-90 {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.days-year {
+  background: #fce7f3;
+  color: #be185d;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   header h1 {
@@ -513,5 +676,42 @@ footer {
   .history-row {
     grid-template-columns: 1fr repeat(3, 70px);
     font-size: 0.9rem;
+  }
+
+  .age-tabs {
+    flex-wrap: wrap;
+  }
+
+  .age-tab {
+    flex: 1;
+    min-width: 45%;
+    justify-content: center;
+  }
+
+  .listings-header {
+    display: none;
+  }
+
+  .listing-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .listing-row.sale,
+  .listing-row.rent {
+    border-left: none;
+    border-top: 4px solid var(--primary);
+  }
+
+  .listing-row.rent {
+    border-top-color: var(--secondary);
+  }
+
+  .col-price {
+    font-size: 1.2rem;
+  }
+
+  .col-age {
+    justify-content: flex-start;
   }
 }

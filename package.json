@@ -1,0 +1,12 @@
+{
+  "name": "realtor-tracker",
+  "version": "1.0.0",
+  "description": "Track real estate listings from realtor.ca",
+  "scripts": {
+    "sync": "node sync-puppeteer.js"
+  },
+  "dependencies": {
+    "playwright": "^1.58.1",
+    "puppeteer": "^21.0.0"
+  }
+}

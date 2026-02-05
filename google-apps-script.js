@@ -5,7 +5,7 @@
  * 1. Go to https://sheets.google.com and create a new spreadsheet
  * 2. Rename Sheet1 to "Listings" and create a second sheet called "Daily_Stats"
  * 3. In "Listings" sheet, add headers in row 1:
- *    MLS_Number | Price | Address | Type | First_Seen | Last_Seen | Status
+ *    MLS_Number | Price | Address | Type | First_Seen | Last_Seen | Status | Bedrooms | Bathrooms | Parking | Sqft | LotSize | PropertyType | URL
  * 4. In "Daily_Stats" sheet, add headers in row 1:
  *    Date | New_Listings | Sold_Count | Total_Active
  * 5. Go to Extensions > Apps Script
@@ -16,10 +16,30 @@
  * 10. Set "Who has access" to "Anyone"
  * 11. Click Deploy and authorize when prompted
  * 12. Copy the Web app URL - this is your API endpoint
+ *
+ * To update headers on existing sheet, run testSetup() from Apps Script editor.
  */
 
 const LISTINGS_SHEET = 'Listings';
 const STATS_SHEET = 'Daily_Stats';
+
+// Column indexes (0-based) for Listings sheet
+const COL = {
+  MLS: 0,
+  PRICE: 1,
+  ADDRESS: 2,
+  TYPE: 3,
+  FIRST_SEEN: 4,
+  LAST_SEEN: 5,
+  STATUS: 6,
+  BEDROOMS: 7,
+  BATHROOMS: 8,
+  PARKING: 9,
+  SQFT: 10,
+  LOT_SIZE: 11,
+  PROPERTY_TYPE: 12,
+  URL: 13
+};
 
 function doGet(e) {
   const action = e.parameter.action;
@@ -28,10 +48,16 @@ function doGet(e) {
     switch (action) {
       case 'getListings':
         return jsonResponse(getListings());
+      case 'getListingsByAge':
+        return jsonResponse(getListingsByAge());
       case 'getStats':
         return jsonResponse(getStats());
       case 'getDailyStats':
         return jsonResponse(getDailyStats());
+      case 'syncBatch':
+        // Handle batch sync via GET (for Chrome extension compatibility)
+        const data = JSON.parse(decodeURIComponent(e.parameter.data));
+        return jsonResponse(syncBatch(data.listings, data.isLastBatch, data.totalListings));
       default:
         return jsonResponse({ error: 'Unknown action' });
     }
@@ -48,6 +74,8 @@ function doPost(e) {
     switch (action) {
       case 'syncListings':
         return jsonResponse(syncListings(data.listings));
+      case 'syncBatch':
+        return jsonResponse(syncBatch(data.listings, data.isLastBatch, data.totalListings));
       case 'updateDailyStats':
         return jsonResponse(updateDailyStats(data.stats));
       default:
@@ -67,20 +95,26 @@ function jsonResponse(data) {
 function getListings() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LISTINGS_SHEET);
   const data = sheet.getDataRange().getValues();
-  const headers = data[0];
   const listings = [];
 
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
-    if (row[0]) { // Has MLS number
+    if (row[COL.MLS]) { // Has MLS number
       listings.push({
-        MLS_Number: row[0],
-        Price: row[1],
-        Address: row[2],
-        Type: row[3],
-        First_Seen: formatDate(row[4]),
-        Last_Seen: formatDate(row[5]),
-        Status: row[6],
+        MLS_Number: row[COL.MLS],
+        Price: row[COL.PRICE],
+        Address: row[COL.ADDRESS],
+        Type: row[COL.TYPE],
+        First_Seen: formatDate(row[COL.FIRST_SEEN]),
+        Last_Seen: formatDate(row[COL.LAST_SEEN]),
+        Status: row[COL.STATUS],
+        Bedrooms: row[COL.BEDROOMS] || '',
+        Bathrooms: row[COL.BATHROOMS] || '',
+        Parking: row[COL.PARKING] || '',
+        Sqft: row[COL.SQFT] || '',
+        LotSize: row[COL.LOT_SIZE] || '',
+        PropertyType: row[COL.PROPERTY_TYPE] || '',
+        URL: row[COL.URL] || '',
         rowIndex: i + 1
       });
     }
@@ -133,6 +167,43 @@ function getStats() {
   };
 }
 
+function getListingsByAge() {
+  const { listings } = getListings();
+  const now = new Date();
+  const today = formatDate(now);
+
+  const daysAgo = (days) => formatDate(new Date(now - days * 24 * 60 * 60 * 1000));
+
+  const day7 = daysAgo(7);
+  const day30 = daysAgo(30);
+  const day90 = daysAgo(90);
+  const day365 = daysAgo(365);
+
+  // Filter active listings by age
+  const activeListings = listings.filter(l => l.Status === 'active');
+
+  const olderThan7Days = activeListings.filter(l => l.First_Seen <= day7);
+  const olderThan30Days = activeListings.filter(l => l.First_Seen <= day30);
+  const olderThan90Days = activeListings.filter(l => l.First_Seen <= day90);
+  const olderThan1Year = activeListings.filter(l => l.First_Seen <= day365);
+
+  // Sort by first seen date (oldest first)
+  const sortByAge = (a, b) => a.First_Seen.localeCompare(b.First_Seen);
+
+  return {
+    olderThan7Days: olderThan7Days.sort(sortByAge),
+    olderThan30Days: olderThan30Days.sort(sortByAge),
+    olderThan90Days: olderThan90Days.sort(sortByAge),
+    olderThan1Year: olderThan1Year.sort(sortByAge),
+    counts: {
+      day7: olderThan7Days.length,
+      day30: olderThan30Days.length,
+      day90: olderThan90Days.length,
+      year: olderThan1Year.length
+    }
+  };
+}
+
 function getDailyStats() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(STATS_SHEET);
   const data = sheet.getDataRange().getValues();
@@ -154,6 +225,85 @@ function getDailyStats() {
   stats.sort((a, b) => b.Date.localeCompare(a.Date));
 
   return { stats };
+}
+
+// Batch sync - handles incremental syncing from Chrome extension
+function syncBatch(listings, isLastBatch, totalListings) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LISTINGS_SHEET);
+  const { listings: existingListings } = getListings();
+
+  const today = formatDate(new Date());
+  const existingMap = new Map();
+  existingListings.forEach(l => existingMap.set(l.MLS_Number, l));
+
+  let newCount = 0;
+  const newRows = [];
+
+  // Process this batch
+  listings.forEach(listing => {
+    if (existingMap.has(listing.mlsNumber)) {
+      const existing = existingMap.get(listing.mlsNumber);
+      // Update Last_Seen and ensure active
+      sheet.getRange(existing.rowIndex, 6).setValue(today);
+      sheet.getRange(existing.rowIndex, 7).setValue('active');
+    } else {
+      // New listing with all details
+      newRows.push([
+        listing.mlsNumber,
+        listing.price,
+        listing.address,
+        listing.type,
+        today,
+        today,
+        'active',
+        listing.bedrooms || '',
+        listing.bathrooms || '',
+        listing.parking || '',
+        listing.sqft || '',
+        listing.lotSize || '',
+        listing.propertyType || '',
+        listing.url || ''
+      ]);
+      newCount++;
+    }
+  });
+
+  // Add new rows
+  if (newRows.length > 0) {
+    const lastRow = sheet.getLastRow();
+    sheet.getRange(lastRow + 1, 1, newRows.length, 14).setValues(newRows);
+  }
+
+  let soldCount = 0;
+
+  // Only mark sold on last batch
+  if (isLastBatch) {
+    // Get fresh data after updates
+    const { listings: updatedListings } = getListings();
+
+    // Find listings not seen today (not in the current sync)
+    updatedListings.forEach(listing => {
+      if (listing.Status === 'active' && listing.Last_Seen !== today) {
+        sheet.getRange(listing.rowIndex, 6).setValue(today);  // Update Last_Seen
+        sheet.getRange(listing.rowIndex, 7).setValue('sold');  // Update Status
+        soldCount++;
+      }
+    });
+
+    // Update daily stats
+    updateDailyStats({
+      date: today,
+      newListings: newCount,
+      soldCount: soldCount,
+      totalActive: totalListings
+    });
+  }
+
+  return {
+    success: true,
+    newListings: newCount,
+    soldListings: soldCount
+  };
 }
 
 function syncListings(currentListings) {
@@ -182,7 +332,7 @@ function syncListings(currentListings) {
         status: 'active'
       });
     } else {
-      // New listing
+      // New listing with all details
       newRows.push([
         listing.mlsNumber,
         listing.price,
@@ -190,7 +340,14 @@ function syncListings(currentListings) {
         listing.type,
         today,
         today,
-        'active'
+        'active',
+        listing.bedrooms || '',
+        listing.bathrooms || '',
+        listing.parking || '',
+        listing.sqft || '',
+        listing.lotSize || '',
+        listing.propertyType || '',
+        listing.url || ''
       ]);
       newCount++;
     }
@@ -217,7 +374,7 @@ function syncListings(currentListings) {
   // Add new rows
   if (newRows.length > 0) {
     const lastRow = sheet.getLastRow();
-    sheet.getRange(lastRow + 1, 1, newRows.length, 7).setValues(newRows);
+    sheet.getRange(lastRow + 1, 1, newRows.length, 14).setValues(newRows);
   }
 
   // Update daily stats
@@ -283,11 +440,13 @@ function testSetup() {
   let listingsSheet = ss.getSheetByName(LISTINGS_SHEET);
   if (!listingsSheet) {
     listingsSheet = ss.insertSheet(LISTINGS_SHEET);
-    listingsSheet.getRange(1, 1, 1, 7).setValues([[
-      'MLS_Number', 'Price', 'Address', 'Type', 'First_Seen', 'Last_Seen', 'Status'
-    ]]);
-    Logger.log('Created Listings sheet with headers');
   }
+  // Update headers to include all columns
+  listingsSheet.getRange(1, 1, 1, 14).setValues([[
+    'MLS_Number', 'Price', 'Address', 'Type', 'First_Seen', 'Last_Seen', 'Status',
+    'Bedrooms', 'Bathrooms', 'Parking', 'Sqft', 'LotSize', 'PropertyType', 'URL'
+  ]]);
+  Logger.log('Updated Listings sheet headers');
 
   // Check Daily_Stats sheet
   let statsSheet = ss.getSheetByName(STATS_SHEET);

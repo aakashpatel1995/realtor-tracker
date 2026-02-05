@@ -49,6 +49,11 @@
         Last updated: <span id="lastUpdate">Never</span>
       </div>
 
+      <div id="session-status" class="session-status">
+        <span id="sessionIndicator" class="indicator inactive"></span>
+        <span id="sessionText">No session captured</span>
+      </div>
+
       <div id="error-message" class="error hidden"></div>
 
       <div class="actions">
@@ -56,7 +61,13 @@
           <span id="refreshText">Refresh Now</span>
           <span id="refreshSpinner" class="spinner hidden"></span>
         </button>
-        <button id="configBtn" class="btn btn-secondary">Settings</button>
+        <button id="captureBtn" class="btn btn-secondary">
+          <span id="captureText">Capture Session</span>
+          <span id="captureSpinner" class="spinner hidden"></span>
+        </button>
+      </div>
+      <div class="actions">
+        <button id="configBtn" class="btn btn-secondary btn-small">Settings</button>
       </div>
 
       <a href="https://aakashpatel1995.github.io/realtor-tracker/" target="_blank" class="dashboard-link">
