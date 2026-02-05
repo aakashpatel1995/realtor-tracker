@@ -80,10 +80,18 @@ async function fetchAllListings() {
             const rawDate = listing.InsertedDateUTC || '';
             const postedDate = parseRealtorDate(rawDate);
 
+            // Parse address to extract city, province, postal code
+            const fullAddress = property.Address?.AddressText || '';
+            const parsed = parseAddress(fullAddress);
+
             allListings.push({
               mlsNumber: listing.MlsNumber,
               price: property.Price ? parseInt(property.Price.replace(/[^0-9]/g, '')) : 0,
-              address: property.Address?.AddressText || '',
+              address: fullAddress,
+              streetAddress: parsed.street,
+              city: parsed.city,
+              province: parsed.province,
+              postalCode: listing.PostalCode || parsed.postalCode,
               type: type,
               bedrooms: building.Bedrooms || '',
               bathrooms: building.BathroomTotal || '',
@@ -108,6 +116,49 @@ async function fetchAllListings() {
 
   console.log(`[RealtorTracker] Total: ${allListings.length} listings`);
   return allListings;
+}
+
+// Parse address like "408 FAIRALL STREET|Ajax (South West), Ontario L1S1R6"
+function parseAddress(addressText) {
+  const result = {
+    street: '',
+    city: '',
+    province: '',
+    postalCode: ''
+  };
+
+  if (!addressText) return result;
+
+  // Split by pipe to get street and rest
+  const parts = addressText.split('|');
+  result.street = parts[0]?.trim() || '';
+
+  if (parts.length > 1) {
+    const locationPart = parts[1].trim();
+
+    // Extract postal code (Canadian format: A1A 1A1 or A1A1A1)
+    const postalMatch = locationPart.match(/([A-Z]\d[A-Z]\s?\d[A-Z]\d)$/i);
+    if (postalMatch) {
+      result.postalCode = postalMatch[1].replace(/\s/g, '').toUpperCase();
+    }
+
+    // Remove postal code from location part for further parsing
+    const locationWithoutPostal = locationPart.replace(/[A-Z]\d[A-Z]\s?\d[A-Z]\d$/i, '').trim();
+
+    // Match pattern: City (Area), Province
+    // or: City, Province
+    const cityProvinceMatch = locationWithoutPostal.match(/^([^,]+),\s*(\w+)\s*$/);
+    if (cityProvinceMatch) {
+      // Extract city name (remove area in parentheses for cleaner filtering)
+      let cityFull = cityProvinceMatch[1].trim();
+      // Remove area descriptor like "(South West)" for cleaner city name
+      const cityClean = cityFull.replace(/\s*\([^)]+\)\s*$/, '').trim();
+      result.city = cityClean;
+      result.province = cityProvinceMatch[2].trim();
+    }
+  }
+
+  return result;
 }
 
 function parseRealtorDate(dateStr) {

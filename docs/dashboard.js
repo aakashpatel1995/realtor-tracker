@@ -9,6 +9,8 @@ let autoRefreshTimer = null;
 let listingsData = null;
 let currentAgeFilter = '7';
 let currentSort = 'date-oldest';
+let currentCityFilter = '';
+let currentPostalFilter = '';
 
 // Initialize dashboard
 document.addEventListener('DOMContentLoaded', () => {
@@ -283,6 +285,30 @@ function setupAgeTabs() {
       renderListings();
     });
   }
+
+  // City filter handler
+  const cityFilter = document.getElementById('cityFilter');
+  if (cityFilter) {
+    cityFilter.addEventListener('change', (e) => {
+      currentCityFilter = e.target.value;
+      console.log('[Dashboard] City filter changed to:', currentCityFilter);
+      renderListings();
+    });
+  }
+
+  // Postal code filter handler (with debounce)
+  const postalFilter = document.getElementById('postalFilter');
+  if (postalFilter) {
+    let postalTimeout;
+    postalFilter.addEventListener('input', (e) => {
+      clearTimeout(postalTimeout);
+      postalTimeout = setTimeout(() => {
+        currentPostalFilter = e.target.value.toUpperCase().replace(/\s/g, '');
+        console.log('[Dashboard] Postal filter changed to:', currentPostalFilter);
+        renderListings();
+      }, 300);
+    });
+  }
 }
 
 function updateListingsByAge(data) {
@@ -298,7 +324,50 @@ function updateListingsByAge(data) {
   document.getElementById('count90').textContent = data.counts?.day90 || 0;
   document.getElementById('count365').textContent = data.counts?.year || 0;
 
+  // Populate city dropdown from all listings
+  populateCityFilter(data);
+
   renderListings();
+}
+
+function populateCityFilter(data) {
+  const citySelect = document.getElementById('cityFilter');
+  if (!citySelect) return;
+
+  // Collect all unique cities from all age groups
+  const cities = new Set();
+  const allListings = [
+    ...(data.olderThan7Days || []),
+    ...(data.olderThan30Days || []),
+    ...(data.olderThan90Days || []),
+    ...(data.olderThan1Year || [])
+  ];
+
+  allListings.forEach(listing => {
+    if (listing.City) {
+      cities.add(listing.City);
+    }
+  });
+
+  // Sort cities alphabetically
+  const sortedCities = Array.from(cities).sort();
+
+  // Preserve current selection
+  const currentValue = citySelect.value;
+
+  // Rebuild options
+  citySelect.innerHTML = '<option value="">All Cities</option>';
+  sortedCities.forEach(city => {
+    const option = document.createElement('option');
+    option.value = city;
+    option.textContent = city;
+    citySelect.appendChild(option);
+  });
+
+  // Restore selection if still valid
+  if (currentValue && sortedCities.includes(currentValue)) {
+    citySelect.value = currentValue;
+  }
 }
 
 function renderListings() {
@@ -320,6 +389,25 @@ function renderListings() {
 
   if (!listings || listings.length === 0) {
     container.innerHTML = '<div class="listings-empty">No listings found in this category</div>';
+    return;
+  }
+
+  // Apply city filter
+  if (currentCityFilter) {
+    listings = listings.filter(l => l.City === currentCityFilter);
+  }
+
+  // Apply postal code filter
+  if (currentPostalFilter) {
+    listings = listings.filter(l => {
+      const postal = (l.PostalCode || '').toUpperCase().replace(/\s/g, '');
+      return postal.startsWith(currentPostalFilter);
+    });
+  }
+
+  // Check if any listings after filtering
+  if (listings.length === 0) {
+    container.innerHTML = '<div class="listings-empty">No listings found matching your filters</div>';
     return;
   }
 
@@ -359,7 +447,11 @@ function renderListings() {
         <div class="col-mls">${listing.MLS_Number || 'N/A'}</div>
         <div class="col-address">
           <div class="listing-address">${listing.Address || 'N/A'}</div>
-          <div class="listing-type">${listing.PropertyType || listing.Type}</div>
+          <div class="listing-meta">
+            <span class="listing-type">${listing.PropertyType || listing.Type}</span>
+            ${listing.City ? `<span class="listing-city">${listing.City}</span>` : ''}
+            ${listing.PostalCode ? `<span class="listing-postal">${listing.PostalCode}</span>` : ''}
+          </div>
         </div>
         <div class="col-price">${price}</div>
         <div class="col-details">${details}</div>
@@ -460,6 +552,22 @@ function sortListings(listings, sortBy) {
         const priceA = parsePrice(a.Price);
         const priceB = parsePrice(b.Price);
         return priceB - priceA;
+      });
+      break;
+    case 'city':
+      // City A-Z
+      sorted.sort((a, b) => {
+        const cityA = (a.City || '').toLowerCase();
+        const cityB = (b.City || '').toLowerCase();
+        return cityA.localeCompare(cityB);
+      });
+      break;
+    case 'postal':
+      // Postal code
+      sorted.sort((a, b) => {
+        const postalA = (a.PostalCode || '').toUpperCase();
+        const postalB = (b.PostalCode || '').toUpperCase();
+        return postalA.localeCompare(postalB);
       });
       break;
   }

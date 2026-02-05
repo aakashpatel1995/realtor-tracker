@@ -102,14 +102,28 @@
       <section class="listings-section">
         <div class="listings-header-row">
           <h2>Listings by Age</h2>
-          <div class="sort-controls">
-            <label for="sortBy">Sort by:</label>
-            <select id="sortBy" class="sort-select">
-              <option value="date-oldest">Oldest First</option>
-              <option value="date-newest">Newest First</option>
-              <option value="price-low">Price: Low to High</option>
-              <option value="price-high">Price: High to Low</option>
-            </select>
+          <div class="filter-controls">
+            <div class="filter-group">
+              <label for="cityFilter">City:</label>
+              <select id="cityFilter" class="filter-select">
+                <option value="">All Cities</option>
+              </select>
+            </div>
+            <div class="filter-group">
+              <label for="postalFilter">Postal Code:</label>
+              <input type="text" id="postalFilter" class="filter-input" placeholder="e.g. L1S or M5V">
+            </div>
+            <div class="filter-group">
+              <label for="sortBy">Sort by:</label>
+              <select id="sortBy" class="filter-select">
+                <option value="date-oldest">Oldest First</option>
+                <option value="date-newest">Newest First</option>
+                <option value="price-low">Price: Low to High</option>
+                <option value="price-high">Price: High to Low</option>
+                <option value="city">City A-Z</option>
+                <option value="postal">Postal Code</option>
+              </select>
+            </div>
           </div>
         </div>
         <div class="age-tabs">

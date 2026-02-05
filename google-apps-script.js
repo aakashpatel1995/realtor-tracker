@@ -39,8 +39,13 @@ const COL = {
   LOT_SIZE: 11,
   PROPERTY_TYPE: 12,
   URL: 13,
-  LISTED_DATE: 14
+  LISTED_DATE: 14,
+  CITY: 15,
+  PROVINCE: 16,
+  POSTAL_CODE: 17
 };
+
+const TOTAL_COLUMNS = 18;
 
 function doGet(e) {
   const action = e.parameter.action;
@@ -121,6 +126,9 @@ function getListings() {
         PropertyType: row[COL.PROPERTY_TYPE] || '',
         URL: row[COL.URL] || '',
         Listed_Date: formatDate(row[COL.LISTED_DATE]) || '',
+        City: row[COL.CITY] || '',
+        Province: row[COL.PROVINCE] || '',
+        PostalCode: row[COL.POSTAL_CODE] || '',
         rowIndex: i + 1
       });
     }
@@ -261,7 +269,7 @@ function syncBatch(listings, isLastBatch, totalListings) {
       sheet.getRange(existing.rowIndex, 6).setValue(today);
       sheet.getRange(existing.rowIndex, 7).setValue('active');
 
-      // Update Details + Listed_Date (Cols 8-15)
+      // Update Details + Listed_Date + Location (Cols 8-18)
       const details = [[
         listing.bedrooms || '',
         listing.bathrooms || '',
@@ -270,9 +278,12 @@ function syncBatch(listings, isLastBatch, totalListings) {
         listing.lotSize || '',
         listing.propertyType || '',
         listing.url || '',
-        listing.postedDate || '' // Listed_Date
+        listing.postedDate || '', // Listed_Date
+        listing.city || '',
+        listing.province || '',
+        listing.postalCode || ''
       ]];
-      sheet.getRange(existing.rowIndex, 8, 1, 8).setValues(details);
+      sheet.getRange(existing.rowIndex, 8, 1, 11).setValues(details);
 
     } else {
       // New listing
@@ -291,7 +302,10 @@ function syncBatch(listings, isLastBatch, totalListings) {
         listing.lotSize || '',
         listing.propertyType || '',
         listing.url || '',
-        listing.postedDate || '' // Listed_Date
+        listing.postedDate || '', // Listed_Date
+        listing.city || '',
+        listing.province || '',
+        listing.postalCode || ''
       ]);
       newCount++;
     }
@@ -300,7 +314,7 @@ function syncBatch(listings, isLastBatch, totalListings) {
   // Add new rows
   if (newRows.length > 0) {
     const lastRow = sheet.getLastRow();
-    sheet.getRange(lastRow + 1, 1, newRows.length, 15).setValues(newRows);
+    sheet.getRange(lastRow + 1, 1, newRows.length, TOTAL_COLUMNS).setValues(newRows);
   }
 
   let soldCount = 0;
@@ -387,12 +401,13 @@ function testSetup() {
   if (!listingsSheet) {
     listingsSheet = ss.insertSheet(LISTINGS_SHEET);
   }
-  // Update headers to include Listed_Date
-  listingsSheet.getRange(1, 1, 1, 15).setValues([[
+  // Update headers to include all columns
+  listingsSheet.getRange(1, 1, 1, TOTAL_COLUMNS).setValues([[
     'MLS_Number', 'Price', 'Address', 'Type', 'First_Seen', 'Last_Seen', 'Status',
-    'Bedrooms', 'Bathrooms', 'Parking', 'Sqft', 'LotSize', 'PropertyType', 'URL', 'Listed_Date'
+    'Bedrooms', 'Bathrooms', 'Parking', 'Sqft', 'LotSize', 'PropertyType', 'URL', 'Listed_Date',
+    'City', 'Province', 'PostalCode'
   ]]);
-  Logger.log('Updated Listings sheet headers');
+  Logger.log('Updated Listings sheet headers with City, Province, PostalCode');
 
   // Check Daily_Stats sheet
   let statsSheet = ss.getSheetByName(STATS_SHEET);
