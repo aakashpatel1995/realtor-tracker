@@ -1,22 +1,53 @@
 // Content script - fetches listings from within realtor.ca context
 console.log('[RealtorTracker] Content script loaded on realtor.ca');
 
-const GTA_BOUNDS = {
-  longitudeMin: -80.0,
-  longitudeMax: -78.9,
-  latitudeMin: 43.4,
-  latitudeMax: 44.0
-};
-
 // Configuration for fetching
 const FETCH_CONFIG = {
-  MAX_PAGES_PER_TYPE: 50,   // Max pages per transaction type (50 * 200 = 10,000 per type)
+  MAX_PAGES_PER_CITY: 25,    // Max pages per city (25 * 200 = 5,000 per city)
   RECORDS_PER_PAGE: 200,
-  DELAY_BETWEEN_PAGES: 1500,  // ms delay to avoid rate limiting (increased)
-  DELAY_BETWEEN_AREAS: 3000   // ms delay between geographic areas (increased)
+  DELAY_BETWEEN_PAGES: 2000,  // 2 sec delay between pages
+  DELAY_BETWEEN_CITIES: 5000  // 5 sec delay between cities
 };
 
-async function fetchRealtorListings(transactionType = 'sale', page = 1, bounds = GTA_BOUNDS) {
+// Ontario cities to scrape - add more cities here gradually
+const ONTARIO_CITIES = [
+  // Start with Cambridge as requested
+  'Cambridge, ON',
+
+  // Add more cities over time:
+  // 'Kitchener, ON',
+  // 'Waterloo, ON',
+  // 'Guelph, ON',
+  // 'Hamilton, ON',
+  // 'Burlington, ON',
+  // 'Oakville, ON',
+  // 'Mississauga, ON',
+  // 'Brampton, ON',
+  // 'Toronto, ON',
+  // 'Markham, ON',
+  // 'Vaughan, ON',
+  // 'Richmond Hill, ON',
+  // 'Newmarket, ON',
+  // 'Aurora, ON',
+  // 'Whitby, ON',
+  // 'Oshawa, ON',
+  // 'Ajax, ON',
+  // 'Pickering, ON',
+  // 'Scarborough, ON',
+  // 'North York, ON',
+  // 'Etobicoke, ON',
+  // 'London, ON',
+  // 'Windsor, ON',
+  // 'Ottawa, ON',
+  // 'Barrie, ON',
+  // 'St. Catharines, ON',
+  // 'Niagara Falls, ON',
+  // 'Kingston, ON',
+  // 'Sudbury, ON',
+  // 'Thunder Bay, ON',
+];
+
+async function fetchRealtorListings(transactionType = 'sale', page = 1, cityName = null) {
   const transactionTypeId = transactionType === 'sale' ? 2 : 3;
   const params = new URLSearchParams({
     CultureId: '1',
@@ -24,13 +55,14 @@ async function fetchRealtorListings(transactionType = 'sale', page = 1, bounds =
     RecordsPerPage: FETCH_CONFIG.RECORDS_PER_PAGE.toString(),
     PropertySearchTypeId: '1',
     TransactionTypeId: transactionTypeId.toString(),
-    LongitudeMin: bounds.longitudeMin.toString(),
-    LongitudeMax: bounds.longitudeMax.toString(),
-    LatitudeMin: bounds.latitudeMin.toString(),
-    LatitudeMax: bounds.latitudeMax.toString(),
     CurrentPage: page.toString(),
     Sort: '6-D'  // Sort by date descending (newest first)
   });
+
+  // Add city-based search
+  if (cityName) {
+    params.append('LocationSearchString', cityName);
+  }
 
   const response = await fetch('https://api2.realtor.ca/Listing.svc/PropertySearch_Post', {
     method: 'POST',
@@ -55,81 +87,98 @@ async function fetchAllListings() {
   const allListings = [];
   const seenMls = new Set();
 
-  for (let type of ['sale', 'rent']) {
-    console.log(`[RealtorTracker] === Fetching ${type.toUpperCase()} listings ===`);
-    let page = 1;
-    let hasMore = true;
-    let retryCount = 0;
-    const maxRetries = 3;
+  console.log(`[RealtorTracker] === Starting city-by-city fetch ===`);
+  console.log(`[RealtorTracker] Cities to scrape: ${ONTARIO_CITIES.join(', ')}`);
 
-    while (hasMore && page <= FETCH_CONFIG.MAX_PAGES_PER_TYPE) {
-      try {
-        console.log(`[RealtorTracker] Fetching ${type} page ${page}...`);
-        const { results, totalRecords, totalPages } = await fetchRealtorListings(type, page, GTA_BOUNDS);
+  for (const city of ONTARIO_CITIES) {
+    console.log(`\n[RealtorTracker] ========== ${city} ==========`);
 
-        if (page === 1) {
-          console.log(`[RealtorTracker] GTA ${type}: ${totalRecords} total records, ${totalPages} pages available`);
-        }
+    for (let type of ['sale', 'rent']) {
+      console.log(`[RealtorTracker] Fetching ${city} - ${type.toUpperCase()}...`);
+      let page = 1;
+      let hasMore = true;
+      let retryCount = 0;
+      const maxRetries = 3;
+      let cityListingsCount = 0;
 
-        if (results.length === 0) {
-          hasMore = false;
-        } else {
-          retryCount = 0; // Reset retry count on success
+      while (hasMore && page <= FETCH_CONFIG.MAX_PAGES_PER_CITY) {
+        try {
+          const { results, totalRecords, totalPages } = await fetchRealtorListings(type, page, city);
 
-          results.forEach(listing => {
-            if (seenMls.has(listing.MlsNumber)) return;
-            seenMls.add(listing.MlsNumber);
+          if (page === 1) {
+            console.log(`[RealtorTracker] ${city} ${type}: ${totalRecords} total, ${totalPages} pages`);
+          }
 
-            const building = listing.Building || {};
-            const property = listing.Property || {};
-            const land = listing.Land || {};
+          if (results.length === 0) {
+            hasMore = false;
+          } else {
+            retryCount = 0;
 
-            const rawDate = listing.InsertedDateUTC || '';
-            const postedDate = parseRealtorDate(rawDate);
+            let newInPage = 0;
+            results.forEach(listing => {
+              if (seenMls.has(listing.MlsNumber)) return;
+              seenMls.add(listing.MlsNumber);
 
-            const fullAddress = property.Address?.AddressText || '';
-            const parsed = parseAddress(fullAddress);
+              const building = listing.Building || {};
+              const property = listing.Property || {};
+              const land = listing.Land || {};
 
-            allListings.push({
-              mlsNumber: listing.MlsNumber,
-              price: property.Price ? parseInt(property.Price.replace(/[^0-9]/g, '')) : 0,
-              address: fullAddress,
-              streetAddress: parsed.street,
-              city: parsed.city,
-              province: parsed.province,
-              postalCode: listing.PostalCode || parsed.postalCode,
-              type: type,
-              bedrooms: building.Bedrooms || '',
-              bathrooms: building.BathroomTotal || '',
-              parking: property.ParkingSpaceTotal || '',
-              sqft: building.SizeInterior || '',
-              lotSize: land.SizeTotal || '',
-              propertyType: property.Type || '',
-              url: `https://www.realtor.ca${listing.RelativeDetailsURL || ''}`,
-              postedDate: postedDate
+              const rawDate = listing.InsertedDateUTC || '';
+              const postedDate = parseRealtorDate(rawDate);
+
+              const fullAddress = property.Address?.AddressText || '';
+              const parsed = parseAddress(fullAddress);
+
+              allListings.push({
+                mlsNumber: listing.MlsNumber,
+                price: property.Price ? parseInt(property.Price.replace(/[^0-9]/g, '')) : 0,
+                address: fullAddress,
+                streetAddress: parsed.street,
+                city: parsed.city,
+                province: parsed.province,
+                postalCode: listing.PostalCode || parsed.postalCode,
+                type: type,
+                bedrooms: building.Bedrooms || '',
+                bathrooms: building.BathroomTotal || '',
+                parking: property.ParkingSpaceTotal || '',
+                sqft: building.SizeInterior || '',
+                lotSize: land.SizeTotal || '',
+                propertyType: property.Type || '',
+                url: `https://www.realtor.ca${listing.RelativeDetailsURL || ''}`,
+                postedDate: postedDate
+              });
+              newInPage++;
             });
-          });
 
-          console.log(`[RealtorTracker] Page ${page}: +${results.length} (Total: ${allListings.length})`);
-          page++;
-          await new Promise(r => setTimeout(r, FETCH_CONFIG.DELAY_BETWEEN_PAGES));
-        }
-      } catch (e) {
-        console.error(`[RealtorTracker] Error on ${type} page ${page}:`, e.message);
-        retryCount++;
+            cityListingsCount += newInPage;
+            console.log(`[RealtorTracker] ${city} ${type} page ${page}: +${newInPage} new (city total: ${cityListingsCount}, overall: ${allListings.length})`);
+            page++;
+            await new Promise(r => setTimeout(r, FETCH_CONFIG.DELAY_BETWEEN_PAGES));
+          }
+        } catch (e) {
+          console.error(`[RealtorTracker] Error ${city} ${type} page ${page}:`, e.message);
+          retryCount++;
 
-        if (retryCount <= maxRetries) {
-          console.log(`[RealtorTracker] Retry ${retryCount}/${maxRetries} in 5 seconds...`);
-          await new Promise(r => setTimeout(r, 5000));
-        } else {
-          console.log(`[RealtorTracker] Max retries reached, stopping ${type} fetch`);
-          hasMore = false;
+          if (retryCount <= maxRetries) {
+            console.log(`[RealtorTracker] Retry ${retryCount}/${maxRetries} in 5 seconds...`);
+            await new Promise(r => setTimeout(r, 5000));
+          } else {
+            console.log(`[RealtorTracker] Max retries, skipping rest of ${city} ${type}`);
+            hasMore = false;
+          }
         }
       }
+
+      console.log(`[RealtorTracker] ${city} ${type} complete: ${cityListingsCount} listings`);
     }
+
+    // Delay between cities
+    console.log(`[RealtorTracker] Waiting before next city...`);
+    await new Promise(r => setTimeout(r, FETCH_CONFIG.DELAY_BETWEEN_CITIES));
   }
 
-  console.log(`[RealtorTracker] === COMPLETE: ${allListings.length} unique listings ===`);
+  console.log(`\n[RealtorTracker] ========== COMPLETE ==========`);
+  console.log(`[RealtorTracker] Total unique listings: ${allListings.length}`);
   return allListings;
 }
 
