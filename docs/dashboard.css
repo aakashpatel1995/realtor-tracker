@@ -619,6 +619,24 @@ footer {
   color: white;
 }
 
+.age-tab[data-age="sold"] {
+  border: 2px solid var(--danger);
+}
+
+.age-tab[data-age="sold"].active {
+  background: var(--danger);
+}
+
+.age-tab[data-age="sold"] span {
+  background: rgba(245, 101, 101, 0.2);
+  color: var(--danger);
+}
+
+.age-tab[data-age="sold"].active span {
+  background: rgba(255, 255, 255, 0.3);
+  color: white;
+}
+
 .listings-container {
   background: white;
   border-radius: 16px;

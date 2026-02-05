@@ -202,6 +202,9 @@ function getListingsByAge() {
   // New today - listings first seen today
   const newToday = activeListings.filter(l => l.First_Seen === today);
 
+  // Sold/delisted today - listings marked as sold with Last_Seen = today
+  const soldToday = listings.filter(l => l.Status === 'sold' && l.Last_Seen === today);
+
   const olderThan7Days = activeListings.filter(l => getListingDate(l) && getListingDate(l) <= day7);
   const olderThan30Days = activeListings.filter(l => getListingDate(l) && getListingDate(l) <= day30);
   const olderThan90Days = activeListings.filter(l => getListingDate(l) && getListingDate(l) <= day90);
@@ -213,12 +216,14 @@ function getListingsByAge() {
 
   return {
     newToday: newToday.sort(sortByNewest),
+    soldToday: soldToday.sort(sortByNewest),
     olderThan7Days: olderThan7Days.sort(sortByAge),
     olderThan30Days: olderThan30Days.sort(sortByAge),
     olderThan90Days: olderThan90Days.sort(sortByAge),
     olderThan1Year: olderThan1Year.sort(sortByAge),
     counts: {
       today: newToday.length,
+      sold: soldToday.length,
       day7: olderThan7Days.length,
       day30: olderThan30Days.length,
       day90: olderThan90Days.length,
