@@ -7,6 +7,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   const refreshBtn = document.getElementById('refreshBtn');
   const refreshText = document.getElementById('refreshText');
   const refreshSpinner = document.getElementById('refreshSpinner');
+  const fetchCityBtn = document.getElementById('fetchCityBtn');
+  const fetchCityText = document.getElementById('fetchCityText');
+  const fetchCitySpinner = document.getElementById('fetchCitySpinner');
   const captureBtn = document.getElementById('captureBtn');
   const captureText = document.getElementById('captureText');
   const captureSpinner = document.getElementById('captureSpinner');
@@ -27,10 +30,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Update session status
     updateSessionStatus(config.sessionCaptured, config.sessionCapturedAt);
+
+    // Update schedule status
+    updateScheduleStatus(config);
   });
 
   // Load stats
   loadStats();
+
+  // Load schedule status
+  loadScheduleStatus();
 
   // Toggle config section
   configBtn.addEventListener('click', () => {
@@ -58,7 +67,33 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // Manual refresh
+  // Fetch next city
+  fetchCityBtn.addEventListener('click', async () => {
+    fetchCityBtn.disabled = true;
+    fetchCityText.textContent = 'Fetching...';
+    fetchCitySpinner.classList.remove('hidden');
+    hideError();
+
+    chrome.runtime.sendMessage({ action: 'fetchNextCity' }, (result) => {
+      fetchCityBtn.disabled = false;
+      fetchCityText.textContent = 'Fetch Next City';
+      fetchCitySpinner.classList.add('hidden');
+
+      if (result.success) {
+        loadStats();
+        loadScheduleStatus();
+        // Show which city was fetched
+        fetchCityText.textContent = `Done: ${result.city}`;
+        setTimeout(() => {
+          fetchCityText.textContent = 'Fetch Next City';
+        }, 3000);
+      } else {
+        showError(result.error || 'Failed to fetch city');
+      }
+    });
+  });
+
+  // Manual refresh (legacy)
   refreshBtn.addEventListener('click', async () => {
     refreshBtn.disabled = true;
     refreshText.textContent = 'Refreshing...';
@@ -67,7 +102,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     chrome.runtime.sendMessage({ action: 'manualRefresh' }, (result) => {
       refreshBtn.disabled = false;
-      refreshText.textContent = 'Refresh Now';
+      refreshText.textContent = 'Full Refresh (Legacy)';
       refreshSpinner.classList.add('hidden');
 
       if (result.success) {
@@ -215,5 +250,29 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function hideError() {
     errorMessage.classList.add('hidden');
+  }
+
+  function loadScheduleStatus() {
+    chrome.runtime.sendMessage({ action: 'getScheduleStatus' }, (status) => {
+      if (status) {
+        updateScheduleDisplay(status);
+      }
+    });
+  }
+
+  function updateScheduleStatus(config) {
+    // Basic update from config
+    if (config.currentCityIndex !== undefined) {
+      document.getElementById('cityProgress').textContent = `${config.currentCityIndex}/?`;
+    }
+    if (config.lastCityFetched) {
+      document.getElementById('lastCityFetched').textContent = config.lastCityFetched;
+    }
+  }
+
+  function updateScheduleDisplay(status) {
+    document.getElementById('cityProgress').textContent = `${status.currentCityIndex}/${status.totalCities}`;
+    document.getElementById('currentCity').textContent = status.currentCity || '-';
+    document.getElementById('lastCityFetched').textContent = status.lastCityFetched || 'None';
   }
 });

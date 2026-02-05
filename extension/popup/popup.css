@@ -125,7 +125,36 @@ hr {
   gap: 8px;
   font-size: 0.75rem;
   color: rgba(255, 255, 255, 0.8);
+  margin-bottom: 12px;
+}
+
+.schedule-status {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 12px;
   margin-bottom: 16px;
+}
+
+.schedule-status h4 {
+  color: white;
+  font-size: 0.85rem;
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.schedule-info {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.9);
+  line-height: 1.6;
+}
+
+.schedule-info div {
+  display: flex;
+  justify-content: space-between;
+}
+
+.schedule-info strong {
+  color: rgba(255, 255, 255, 0.7);
 }
 
 .indicator {

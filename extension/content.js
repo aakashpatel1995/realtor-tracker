@@ -6,45 +6,126 @@ const FETCH_CONFIG = {
   MAX_PAGES_PER_CITY: 25,    // Max pages per city (25 * 200 = 5,000 per city)
   RECORDS_PER_PAGE: 200,
   DELAY_BETWEEN_PAGES: 2000,  // 2 sec delay between pages
-  DELAY_BETWEEN_CITIES: 5000  // 5 sec delay between cities
 };
 
-// Ontario cities to scrape - add more cities here gradually
+// Complete list of Ontario cities/regions to scrape
 const ONTARIO_CITIES = [
-  // Start with Cambridge as requested
+  // Waterloo Region
   'Cambridge, ON',
+  'Kitchener, ON',
+  'Waterloo, ON',
 
-  // Add more cities over time:
-  // 'Kitchener, ON',
-  // 'Waterloo, ON',
-  // 'Guelph, ON',
-  // 'Hamilton, ON',
-  // 'Burlington, ON',
-  // 'Oakville, ON',
-  // 'Mississauga, ON',
-  // 'Brampton, ON',
-  // 'Toronto, ON',
-  // 'Markham, ON',
-  // 'Vaughan, ON',
-  // 'Richmond Hill, ON',
-  // 'Newmarket, ON',
-  // 'Aurora, ON',
-  // 'Whitby, ON',
-  // 'Oshawa, ON',
-  // 'Ajax, ON',
-  // 'Pickering, ON',
-  // 'Scarborough, ON',
-  // 'North York, ON',
-  // 'Etobicoke, ON',
-  // 'London, ON',
-  // 'Windsor, ON',
-  // 'Ottawa, ON',
-  // 'Barrie, ON',
-  // 'St. Catharines, ON',
-  // 'Niagara Falls, ON',
-  // 'Kingston, ON',
-  // 'Sudbury, ON',
-  // 'Thunder Bay, ON',
+  // Wellington County
+  'Guelph, ON',
+  'Fergus, ON',
+  'Elora, ON',
+
+  // Hamilton & Niagara
+  'Hamilton, ON',
+  'Burlington, ON',
+  'St. Catharines, ON',
+  'Niagara Falls, ON',
+  'Niagara-on-the-Lake, ON',
+  'Welland, ON',
+  'Fort Erie, ON',
+  'Grimsby, ON',
+  'Lincoln, ON',
+
+  // Halton Region
+  'Oakville, ON',
+  'Milton, ON',
+  'Halton Hills, ON',
+  'Georgetown, ON',
+
+  // Peel Region
+  'Mississauga, ON',
+  'Brampton, ON',
+  'Caledon, ON',
+
+  // Toronto
+  'Toronto, ON',
+  'North York, ON',
+  'Scarborough, ON',
+  'Etobicoke, ON',
+  'East York, ON',
+
+  // York Region
+  'Markham, ON',
+  'Vaughan, ON',
+  'Richmond Hill, ON',
+  'Newmarket, ON',
+  'Aurora, ON',
+  'King City, ON',
+  'Stouffville, ON',
+  'Georgina, ON',
+
+  // Durham Region
+  'Oshawa, ON',
+  'Whitby, ON',
+  'Ajax, ON',
+  'Pickering, ON',
+  'Clarington, ON',
+  'Bowmanville, ON',
+  'Uxbridge, ON',
+  'Port Perry, ON',
+
+  // Simcoe County
+  'Barrie, ON',
+  'Orillia, ON',
+  'Collingwood, ON',
+  'Wasaga Beach, ON',
+  'Innisfil, ON',
+  'Bradford, ON',
+  'Alliston, ON',
+  'Midland, ON',
+
+  // Southwestern Ontario
+  'London, ON',
+  'Windsor, ON',
+  'Sarnia, ON',
+  'Chatham, ON',
+  'St. Thomas, ON',
+  'Woodstock, ON',
+  'Stratford, ON',
+  'Brantford, ON',
+  'Tillsonburg, ON',
+  'Ingersoll, ON',
+
+  // Eastern Ontario
+  'Ottawa, ON',
+  'Kingston, ON',
+  'Belleville, ON',
+  'Peterborough, ON',
+  'Cobourg, ON',
+  'Port Hope, ON',
+  'Trenton, ON',
+  'Cornwall, ON',
+  'Brockville, ON',
+  'Smiths Falls, ON',
+  'Carleton Place, ON',
+
+  // Muskoka & Cottage Country
+  'Muskoka, ON',
+  'Huntsville, ON',
+  'Bracebridge, ON',
+  'Gravenhurst, ON',
+  'Parry Sound, ON',
+
+  // Northern Ontario
+  'Sudbury, ON',
+  'Thunder Bay, ON',
+  'Sault Ste. Marie, ON',
+  'North Bay, ON',
+  'Timmins, ON',
+  'Kenora, ON',
+
+  // Other
+  'Owen Sound, ON',
+  'Orangeville, ON',
+  'Shelburne, ON',
+  'Tobermory, ON',
+  'Kawartha Lakes, ON',
+  'Prince Edward County, ON',
 ];
 
 async function fetchRealtorListings(transactionType = 'sale', page = 1, cityName = null) {
@@ -83,103 +164,101 @@ async function fetchRealtorListings(transactionType = 'sale', page = 1, cityName
   };
 }
 
-async function fetchAllListings() {
-  const allListings = [];
+// Fetch listings for a single city
+async function fetchCityListings(city) {
+  const listings = [];
   const seenMls = new Set();
 
-  console.log(`[RealtorTracker] === Starting city-by-city fetch ===`);
-  console.log(`[RealtorTracker] Cities to scrape: ${ONTARIO_CITIES.join(', ')}`);
+  console.log(`\n[RealtorTracker] ========== Fetching: ${city} ==========`);
 
-  for (const city of ONTARIO_CITIES) {
-    console.log(`\n[RealtorTracker] ========== ${city} ==========`);
+  for (let type of ['sale', 'rent']) {
+    console.log(`[RealtorTracker] ${city} - ${type.toUpperCase()}...`);
+    let page = 1;
+    let hasMore = true;
+    let retryCount = 0;
+    const maxRetries = 3;
+    let typeCount = 0;
 
-    for (let type of ['sale', 'rent']) {
-      console.log(`[RealtorTracker] Fetching ${city} - ${type.toUpperCase()}...`);
-      let page = 1;
-      let hasMore = true;
-      let retryCount = 0;
-      const maxRetries = 3;
-      let cityListingsCount = 0;
+    while (hasMore && page <= FETCH_CONFIG.MAX_PAGES_PER_CITY) {
+      try {
+        const { results, totalRecords, totalPages } = await fetchRealtorListings(type, page, city);
 
-      while (hasMore && page <= FETCH_CONFIG.MAX_PAGES_PER_CITY) {
-        try {
-          const { results, totalRecords, totalPages } = await fetchRealtorListings(type, page, city);
+        if (page === 1) {
+          console.log(`[RealtorTracker] ${city} ${type}: ${totalRecords} total, ${totalPages} pages`);
+        }
 
-          if (page === 1) {
-            console.log(`[RealtorTracker] ${city} ${type}: ${totalRecords} total, ${totalPages} pages`);
-          }
+        if (results.length === 0) {
+          hasMore = false;
+        } else {
+          retryCount = 0;
 
-          if (results.length === 0) {
-            hasMore = false;
-          } else {
-            retryCount = 0;
+          results.forEach(listing => {
+            if (seenMls.has(listing.MlsNumber)) return;
+            seenMls.add(listing.MlsNumber);
 
-            let newInPage = 0;
-            results.forEach(listing => {
-              if (seenMls.has(listing.MlsNumber)) return;
-              seenMls.add(listing.MlsNumber);
+            const building = listing.Building || {};
+            const property = listing.Property || {};
+            const land = listing.Land || {};
 
-              const building = listing.Building || {};
-              const property = listing.Property || {};
-              const land = listing.Land || {};
+            const rawDate = listing.InsertedDateUTC || '';
+            const postedDate = parseRealtorDate(rawDate);
 
-              const rawDate = listing.InsertedDateUTC || '';
-              const postedDate = parseRealtorDate(rawDate);
+            const fullAddress = property.Address?.AddressText || '';
+            const parsed = parseAddress(fullAddress);
 
-              const fullAddress = property.Address?.AddressText || '';
-              const parsed = parseAddress(fullAddress);
-
-              allListings.push({
-                mlsNumber: listing.MlsNumber,
-                price: property.Price ? parseInt(property.Price.replace(/[^0-9]/g, '')) : 0,
-                address: fullAddress,
-                streetAddress: parsed.street,
-                city: parsed.city,
-                province: parsed.province,
-                postalCode: listing.PostalCode || parsed.postalCode,
-                type: type,
-                bedrooms: building.Bedrooms || '',
-                bathrooms: building.BathroomTotal || '',
-                parking: property.ParkingSpaceTotal || '',
-                sqft: building.SizeInterior || '',
-                lotSize: land.SizeTotal || '',
-                propertyType: property.Type || '',
-                url: `https://www.realtor.ca${listing.RelativeDetailsURL || ''}`,
-                postedDate: postedDate
-              });
-              newInPage++;
+            listings.push({
+              mlsNumber: listing.MlsNumber,
+              price: property.Price ? parseInt(property.Price.replace(/[^0-9]/g, '')) : 0,
+              address: fullAddress,
+              streetAddress: parsed.street,
+              city: parsed.city,
+              province: parsed.province,
+              postalCode: listing.PostalCode || parsed.postalCode,
+              type: type,
+              bedrooms: building.Bedrooms || '',
+              bathrooms: building.BathroomTotal || '',
+              parking: property.ParkingSpaceTotal || '',
+              sqft: building.SizeInterior || '',
+              lotSize: land.SizeTotal || '',
+              propertyType: property.Type || '',
+              url: `https://www.realtor.ca${listing.RelativeDetailsURL || ''}`,
+              postedDate: postedDate
             });
+            typeCount++;
+          });
 
-            cityListingsCount += newInPage;
-            console.log(`[RealtorTracker] ${city} ${type} page ${page}: +${newInPage} new (city total: ${cityListingsCount}, overall: ${allListings.length})`);
-            page++;
-            await new Promise(r => setTimeout(r, FETCH_CONFIG.DELAY_BETWEEN_PAGES));
-          }
-        } catch (e) {
-          console.error(`[RealtorTracker] Error ${city} ${type} page ${page}:`, e.message);
-          retryCount++;
+          console.log(`[RealtorTracker] ${city} ${type} page ${page}: +${results.length} (total: ${typeCount})`);
+          page++;
+          await new Promise(r => setTimeout(r, FETCH_CONFIG.DELAY_BETWEEN_PAGES));
+        }
+      } catch (e) {
+        console.error(`[RealtorTracker] Error ${city} ${type} page ${page}:`, e.message);
+        retryCount++;
 
-          if (retryCount <= maxRetries) {
-            console.log(`[RealtorTracker] Retry ${retryCount}/${maxRetries} in 5 seconds...`);
-            await new Promise(r => setTimeout(r, 5000));
-          } else {
-            console.log(`[RealtorTracker] Max retries, skipping rest of ${city} ${type}`);
-            hasMore = false;
-          }
+        if (retryCount <= maxRetries) {
+          console.log(`[RealtorTracker] Retry ${retryCount}/${maxRetries} in 5 seconds...`);
+          await new Promise(r => setTimeout(r, 5000));
+        } else {
+          console.log(`[RealtorTracker] Max retries, stopping ${type}`);
+          hasMore = false;
         }
       }
-
-      console.log(`[RealtorTracker] ${city} ${type} complete: ${cityListingsCount} listings`);
     }
-
-    // Delay between cities
-    console.log(`[RealtorTracker] Waiting before next city...`);
-    await new Promise(r => setTimeout(r, FETCH_CONFIG.DELAY_BETWEEN_CITIES));
   }
 
-  console.log(`\n[RealtorTracker] ========== COMPLETE ==========`);
-  console.log(`[RealtorTracker] Total unique listings: ${allListings.length}`);
-  return allListings;
+  console.log(`[RealtorTracker] ${city} COMPLETE: ${listings.length} listings`);
+  return listings;
+}
+
+// Get the list of all cities
+function getOntarioCities() {
+  return ONTARIO_CITIES;
+}
+
+// Legacy function for backward compatibility
+async function fetchAllListings() {
+  // If no specific city requested, fetch first city only
+  return await fetchCityListings(ONTARIO_CITIES[0]);
 }
 
 // Parse address like "408 FAIRALL STREET|Ajax (South West), Ontario L1S1R6"
@@ -254,7 +333,8 @@ function parseRealtorDate(dateStr) {
 // Listen for messages from background script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'fetchListings') {
-    console.log('[RealtorTracker] Received fetch request from background');
+    // Legacy: fetch first city
+    console.log('[RealtorTracker] Received fetch request (legacy)');
     fetchAllListings()
       .then(listings => {
         console.log(`[RealtorTracker] Sending ${listings.length} listings to background`);
@@ -264,7 +344,29 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         console.error('[RealtorTracker] Fetch error:', error);
         sendResponse({ success: false, error: error.message });
       });
-    return true; // Keep channel open for async response
+    return true;
+  }
+
+  if (request.action === 'fetchCity') {
+    // Fetch specific city
+    const city = request.city;
+    console.log(`[RealtorTracker] Received fetch request for: ${city}`);
+    fetchCityListings(city)
+      .then(listings => {
+        console.log(`[RealtorTracker] ${city}: Sending ${listings.length} listings`);
+        sendResponse({ success: true, listings, city });
+      })
+      .catch(error => {
+        console.error(`[RealtorTracker] ${city} fetch error:`, error);
+        sendResponse({ success: false, error: error.message, city });
+      });
+    return true;
+  }
+
+  if (request.action === 'getCities') {
+    // Return list of all cities
+    sendResponse({ cities: getOntarioCities() });
+    return false;
   }
 });
 

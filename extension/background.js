@@ -1,25 +1,71 @@
 // Realtor.ca Listing Tracker - Background Service Worker
 
-const CONFIG = { SCRIPT_URL: '', UPDATE_INTERVAL_MINUTES: 60 };
-
-const GTA_BOUNDS = {
-  longitudeMin: -80.0,
-  longitudeMax: -78.9,
-  latitudeMin: 43.4,
-  latitudeMax: 44.0
+const CONFIG = {
+  SCRIPT_URL: '',
+  CITY_FETCH_INTERVAL_MINUTES: 30  // Fetch one city every 30 minutes
 };
 
+// Complete list of Ontario cities (must match content.js)
+const ONTARIO_CITIES = [
+  'Cambridge, ON', 'Kitchener, ON', 'Waterloo, ON',
+  'Guelph, ON', 'Fergus, ON', 'Elora, ON',
+  'Hamilton, ON', 'Burlington, ON', 'St. Catharines, ON', 'Niagara Falls, ON',
+  'Niagara-on-the-Lake, ON', 'Welland, ON', 'Fort Erie, ON', 'Grimsby, ON', 'Lincoln, ON',
+  'Oakville, ON', 'Milton, ON', 'Halton Hills, ON', 'Georgetown, ON',
+  'Mississauga, ON', 'Brampton, ON', 'Caledon, ON',
+  'Toronto, ON', 'North York, ON', 'Scarborough, ON', 'Etobicoke, ON', 'East York, ON',
+  'Markham, ON', 'Vaughan, ON', 'Richmond Hill, ON', 'Newmarket, ON', 'Aurora, ON',
+  'King City, ON', 'Stouffville, ON', 'Georgina, ON',
+  'Oshawa, ON', 'Whitby, ON', 'Ajax, ON', 'Pickering, ON', 'Clarington, ON',
+  'Bowmanville, ON', 'Uxbridge, ON', 'Port Perry, ON',
+  'Barrie, ON', 'Orillia, ON', 'Collingwood, ON', 'Wasaga Beach, ON', 'Innisfil, ON',
+  'Bradford, ON', 'Alliston, ON', 'Midland, ON',
+  'London, ON', 'Windsor, ON', 'Sarnia, ON', 'Chatham, ON', 'St. Thomas, ON',
+  'Woodstock, ON', 'Stratford, ON', 'Brantford, ON', 'Tillsonburg, ON', 'Ingersoll, ON',
+  'Ottawa, ON', 'Kingston, ON', 'Belleville, ON', 'Peterborough, ON', 'Cobourg, ON',
+  'Port Hope, ON', 'Trenton, ON', 'Cornwall, ON', 'Brockville, ON', 'Smiths Falls, ON', 'Carleton Place, ON',
+  'Muskoka, ON', 'Huntsville, ON', 'Bracebridge, ON', 'Gravenhurst, ON', 'Parry Sound, ON',
+  'Sudbury, ON', 'Thunder Bay, ON', 'Sault Ste. Marie, ON', 'North Bay, ON', 'Timmins, ON', 'Kenora, ON',
+  'Owen Sound, ON', 'Orangeville, ON', 'Shelburne, ON', 'Tobermory, ON', 'Kawartha Lakes, ON', 'Prince Edward County, ON'
+];
+
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.alarms.create('fetchListings', { periodInMinutes: CONFIG.UPDATE_INTERVAL_MINUTES });
+  // Set up the city fetch scheduler
+  chrome.alarms.create('fetchNextCity', { periodInMinutes: CONFIG.CITY_FETCH_INTERVAL_MINUTES });
+  console.log('[RealtorTracker] Scheduled city fetch every', CONFIG.CITY_FETCH_INTERVAL_MINUTES, 'minutes');
+
+  // Initialize city index if not set
+  chrome.storage.local.get(['currentCityIndex'], (result) => {
+    if (result.currentCityIndex === undefined) {
+      chrome.storage.local.set({ currentCityIndex: 0 });
+    }
+  });
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === 'fetchListings') fetchAndUpdateListings();
+  if (alarm.name === 'fetchNextCity') {
+    fetchNextCity();
+  }
+  if (alarm.name === 'keepAlive') {
+    // Just a keep-alive ping, do nothing
+  }
 });
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'manualRefresh') {
     fetchAndUpdateListings().then(sendResponse);
+    return true;
+  }
+  if (request.action === 'fetchNextCity') {
+    fetchNextCity().then(sendResponse);
+    return true;
+  }
+  if (request.action === 'fetchAllCities') {
+    fetchAllCitiesSequentially().then(sendResponse);
+    return true;
+  }
+  if (request.action === 'getScheduleStatus') {
+    getScheduleStatus().then(sendResponse);
     return true;
   }
   if (request.action === 'getStats') {
@@ -31,7 +77,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
   if (request.action === 'getConfig') {
-    chrome.storage.local.get(['scriptUrl', 'sessionCaptured', 'sessionCapturedAt'], sendResponse);
+    chrome.storage.local.get(['scriptUrl', 'sessionCaptured', 'sessionCapturedAt', 'currentCityIndex', 'lastCityFetched', 'lastCityFetchTime'], sendResponse);
     return true;
   }
   if (request.action === 'captureSession') {
@@ -43,6 +89,184 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return false;
   }
 });
+
+// Get current schedule status
+async function getScheduleStatus() {
+  const data = await chrome.storage.local.get(['currentCityIndex', 'lastCityFetched', 'lastCityFetchTime', 'totalCitiesFetched']);
+  return {
+    currentCityIndex: data.currentCityIndex || 0,
+    totalCities: ONTARIO_CITIES.length,
+    currentCity: ONTARIO_CITIES[data.currentCityIndex || 0],
+    lastCityFetched: data.lastCityFetched || 'None',
+    lastCityFetchTime: data.lastCityFetchTime || null,
+    totalCitiesFetched: data.totalCitiesFetched || 0,
+    nextFetchIn: CONFIG.CITY_FETCH_INTERVAL_MINUTES + ' minutes'
+  };
+}
+
+// Fetch the next city in the list
+async function fetchNextCity() {
+  try {
+    await loadConfig();
+    if (!CONFIG.SCRIPT_URL) {
+      return { success: false, error: 'Google Sheets not configured' };
+    }
+
+    // Get current city index
+    const data = await chrome.storage.local.get(['currentCityIndex', 'totalCitiesFetched']);
+    let cityIndex = data.currentCityIndex || 0;
+    let totalFetched = data.totalCitiesFetched || 0;
+
+    // Get current city
+    const city = ONTARIO_CITIES[cityIndex];
+    console.log(`[RealtorTracker] ===== Fetching city ${cityIndex + 1}/${ONTARIO_CITIES.length}: ${city} =====`);
+
+    // Fetch listings for this city
+    const listings = await fetchCityViaContentScript(city);
+
+    if (listings.length > 0) {
+      console.log(`[RealtorTracker] ${city}: Got ${listings.length} listings, syncing...`);
+      await syncToSheets(listings);
+    } else {
+      console.log(`[RealtorTracker] ${city}: No listings found`);
+    }
+
+    // Move to next city
+    cityIndex = (cityIndex + 1) % ONTARIO_CITIES.length;
+    totalFetched++;
+
+    // If we've completed a full cycle, log it
+    if (cityIndex === 0) {
+      console.log(`[RealtorTracker] ===== COMPLETED FULL CYCLE of all ${ONTARIO_CITIES.length} cities =====`);
+    }
+
+    // Save progress
+    await chrome.storage.local.set({
+      currentCityIndex: cityIndex,
+      lastCityFetched: city,
+      lastCityFetchTime: new Date().toISOString(),
+      totalCitiesFetched: totalFetched,
+      lastUpdate: new Date().toISOString()
+    });
+
+    // Refresh stats
+    await getStats(true);
+
+    return {
+      success: true,
+      city: city,
+      listingsFound: listings.length,
+      nextCity: ONTARIO_CITIES[cityIndex],
+      progress: `${cityIndex}/${ONTARIO_CITIES.length}`
+    };
+
+  } catch (error) {
+    console.error('[RealtorTracker] fetchNextCity error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Fetch a specific city via content script
+async function fetchCityViaContentScript(city) {
+  // Check session
+  const hasSession = await hasValidSession();
+  if (!hasSession) {
+    console.log('[RealtorTracker] Capturing session first...');
+    await captureSession();
+  }
+
+  // Find or create realtor.ca tab
+  let tabs = await chrome.tabs.query({ url: 'https://www.realtor.ca/*' });
+  let tab;
+  let createdTab = false;
+
+  if (tabs.length > 0) {
+    tab = tabs[0];
+  } else {
+    tab = await chrome.tabs.create({ url: 'https://www.realtor.ca/map', active: false });
+    createdTab = true;
+    await waitForTabLoad(tab.id);
+    await new Promise(r => setTimeout(r, 5000));
+  }
+
+  // Send fetch request for specific city
+  const maxRetries = 3;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`[RealtorTracker] Fetching ${city} (attempt ${attempt}/${maxRetries})...`);
+
+      const response = await new Promise((resolve, reject) => {
+        chrome.tabs.sendMessage(tab.id, { action: 'fetchCity', city: city }, response => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
+          resolve(response);
+        });
+      });
+
+      if (response && response.success) {
+        return response.listings || [];
+      } else {
+        throw new Error(response?.error || 'No response');
+      }
+    } catch (error) {
+      console.log(`[RealtorTracker] Attempt ${attempt} failed:`, error.message);
+      if (attempt < maxRetries) {
+        await new Promise(r => setTimeout(r, 5000));
+        // Reload tab
+        await chrome.tabs.reload(tab.id);
+        await waitForTabLoad(tab.id);
+        await new Promise(r => setTimeout(r, 5000));
+      }
+    }
+  }
+
+  return [];
+}
+
+// Helper: Wait for tab to finish loading
+function waitForTabLoad(tabId) {
+  return new Promise(resolve => {
+    const listener = (id, info) => {
+      if (id === tabId && info.status === 'complete') {
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve();
+      }
+    };
+    chrome.tabs.onUpdated.addListener(listener);
+    setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(listener);
+      resolve();
+    }, 30000);
+  });
+}
+
+// Fetch all cities sequentially (manual trigger)
+async function fetchAllCitiesSequentially() {
+  console.log('[RealtorTracker] Starting full fetch of all cities...');
+  const results = [];
+
+  for (let i = 0; i < ONTARIO_CITIES.length; i++) {
+    const city = ONTARIO_CITIES[i];
+    console.log(`[RealtorTracker] Fetching ${i + 1}/${ONTARIO_CITIES.length}: ${city}`);
+
+    try {
+      const result = await fetchNextCity();
+      results.push({ city, ...result });
+    } catch (e) {
+      results.push({ city, success: false, error: e.message });
+    }
+
+    // Wait 30 seconds between cities to avoid rate limiting
+    if (i < ONTARIO_CITIES.length - 1) {
+      console.log('[RealtorTracker] Waiting 30 seconds before next city...');
+      await new Promise(r => setTimeout(r, 30000));
+    }
+  }
+
+  return { success: true, results };
+}
 
 async function loadConfig() {
   return new Promise(resolve => {

@@ -54,16 +54,32 @@
         <span id="sessionText">No session captured</span>
       </div>
 
+      <div id="schedule-status" class="schedule-status">
+        <h4>City Fetch Schedule</h4>
+        <div class="schedule-info">
+          <div><strong>Progress:</strong> <span id="cityProgress">0/0</span></div>
+          <div><strong>Current:</strong> <span id="currentCity">-</span></div>
+          <div><strong>Last fetched:</strong> <span id="lastCityFetched">None</span></div>
+          <div><strong>Next fetch:</strong> Every 30 min (auto)</div>
+        </div>
+      </div>
+
       <div id="error-message" class="error hidden"></div>
 
       <div class="actions">
-        <button id="refreshBtn" class="btn btn-primary">
-          <span id="refreshText">Refresh Now</span>
-          <span id="refreshSpinner" class="spinner hidden"></span>
+        <button id="fetchCityBtn" class="btn btn-primary">
+          <span id="fetchCityText">Fetch Next City</span>
+          <span id="fetchCitySpinner" class="spinner hidden"></span>
         </button>
         <button id="captureBtn" class="btn btn-secondary">
           <span id="captureText">Capture Session</span>
           <span id="captureSpinner" class="spinner hidden"></span>
+        </button>
+      </div>
+      <div class="actions">
+        <button id="refreshBtn" class="btn btn-secondary btn-small">
+          <span id="refreshText">Full Refresh (Legacy)</span>
+          <span id="refreshSpinner" class="spinner hidden"></span>
         </button>
       </div>
       <div class="actions">
