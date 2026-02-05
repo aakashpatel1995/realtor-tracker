@@ -133,11 +133,15 @@ async function fetchRealtorListings(transactionType = 'sale', page = 1, cityName
   const params = new URLSearchParams({
     CultureId: '1',
     ApplicationId: '1',
+    Version: '7.0',
     RecordsPerPage: FETCH_CONFIG.RECORDS_PER_PAGE.toString(),
-    PropertySearchTypeId: '1',
+    PropertySearchTypeId: '0',
+    PropertyTypeGroupID: '1',
     TransactionTypeId: transactionTypeId.toString(),
     CurrentPage: page.toString(),
-    Sort: '6-D'  // Sort by date descending (newest first)
+    Sort: '6-D',
+    Currency: 'CAD',
+    IncludeHiddenListings: 'false'
   });
 
   // Add city-based search
@@ -146,14 +150,18 @@ async function fetchRealtorListings(transactionType = 'sale', page = 1, cityName
   }
 
   try {
-    // Simple fetch - let browser handle headers automatically
     const response = await fetch('https://api2.realtor.ca/Listing.svc/PropertySearch_Post', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'Accept': '*/*',
+        'Accept-Language': 'en-CA,en-US;q=0.9,en;q=0.8'
       },
       body: params.toString(),
-      credentials: 'include'
+      credentials: 'include',
+      mode: 'cors',
+      referrer: 'https://www.realtor.ca/',
+      referrerPolicy: 'strict-origin-when-cross-origin'
     });
 
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
